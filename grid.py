@@ -14,13 +14,16 @@ Find overlap of bounding boxes
 (Plot results for reasons of intuition? Use matplotlib rectangles and (potentially) text to indicate box area...)
 '''
 
-#controller with TopN for first run, intensity*non-overlap on further runs
+#TODO:
+#implement exact method
+#@dataclass?
+#plot boxes?
+
 #add bounding box points to RoI class
 #priorisation function based on peak-picking and non-overlap
-#use proportion of area
+#controller with TopN for first run, intensity*non-overlap on further runs
 #m/z grid doesn't have to be less than half of mass tolerance
 #rt grid should be a bit less than the sampling time
-#@dataclass?
 
 class Box():
     def __init__(self, x1, x2, y1, y2):
@@ -49,7 +52,8 @@ class Grid():
     def get_box_ranges(self, box):
         rt_box_range = (int(box.pt1[0] / self.rt_box_size), int(box.pt2[0] / self.rt_box_size) + 1)
         mz_box_range = (int(box.pt1[1] / self.mz_box_size), int(box.pt2[1] / self.mz_box_size) + 1)
-        return rt_box_range, mz_box_range
+        total_boxes = (rt_box_range[1] - rt_box_range[0]) * (mz_box_range[1] - mz_box_range[0])
+        return rt_box_range, mz_box_range, total_boxes
         
     @abstractmethod
     def box_non_overlap(self, box, *boxes): pass
@@ -59,23 +63,23 @@ class DictGrid(Grid):
     def init_boxes(rtboxes, mzboxes): return defaultdict(list)
     
     def box_non_overlap(self, box, *boxes):
-        rt_box_range, mz_box_range = self.get_box_ranges(box)
+        rt_box_range, mz_box_range, total_boxes = self.get_box_ranges(box)
         def non_overlap(rt, mz):
-            result = self.box_area if not self.boxes[(rt, mz)] else 0.0
+            result = 1.0 if not self.boxes[(rt, mz)] else 0.0
             self.boxes[(rt, mz)].append(box)
             return result
-        return sum(non_overlap(rt, mz) for rt in range(*rt_box_range) for mz in range(*mz_box_range))
+        return sum(non_overlap(rt, mz) for rt in range(*rt_box_range) for mz in range(*mz_box_range)) / total_boxes
     
 class ArrayGrid(Grid):
     @staticmethod
     def init_boxes(rtboxes, mzboxes): return np.array([[False for mz in mzboxes] for rt in rtboxes])
     
     def box_non_overlap(self, box, *boxes):
-        rt_box_range, mz_box_range = self.get_box_ranges(box)
+        rt_box_range, mz_box_range, total_boxes = self.get_box_ranges(box)
         boxes = self.boxes[rt_box_range[0]:rt_box_range[1], mz_box_range[0]:mz_box_range[1]]
-        result = boxes.shape[0] * boxes.shape[1] - np.sum(boxes)
+        falses = total_boxes - np.sum(boxes)
         self.boxes[rt_box_range[0]:rt_box_range[1], mz_box_range[0]:mz_box_range[1]] = True
-        return result * self.box_area
+        return falses / total_boxes
 
 class BoxEnv():
 
@@ -105,7 +109,7 @@ class BoxEnv():
         min_ylen = random.randint(100, 1000)
         max_ylen = max_mz - min_ylen
         boxenv = BoxEnv(min_rt, max_rt, max_mz, min_xlen, max_xlen, min_ylen, max_ylen)
-        for i in range(no_injections): boxenv.boxes_by_injection.append([boxenv.generate_box() for i in range(10)])
+        for i in range(no_injections): boxenv.boxes_by_injection.append([boxenv.generate_box() for i in range(50)])
         return boxenv
         
     @staticmethod
