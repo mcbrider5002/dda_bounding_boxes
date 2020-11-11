@@ -90,7 +90,7 @@ class BoxEnv():
     @classmethod
     def random_boxenv(cls, no_scans=3):
         min_rt, max_rt = 0, random.randint(1000, 2000)
-        max_mz = random.randint(10000, 30000)
+        max_mz = random.randint(1000, 3000)
         min_xlen = random.randint(1, 25)
         max_xlen = random.randint(min_xlen, 50)
         min_ylen = random.randint(100, 1000)
