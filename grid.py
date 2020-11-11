@@ -148,7 +148,7 @@ def main():
     run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 1000, boxenv.max_mz / 1000)
     
     boxenv = BoxEnv(0, 50, 50, 2, 3, 2, 3)
-    boxenv.boxes_by_scan = [[Box(0, 10, 0, 30), Box(5, 15, 0, 30)]]
+    boxenv.boxes_by_scan = [[Box(0, 10, 0, 30), Box(5, 15, 0, 30), Box(0, 10, 15, 45), Box(13, 17, 0, 30)]]
     run_area_calcs(boxenv, 0.05, 0.05)
     
 main()
