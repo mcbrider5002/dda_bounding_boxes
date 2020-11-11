@@ -3,15 +3,24 @@ import random
 import itertools
 import numpy as np
 from decimal import Decimal
+from collections import defaultdict
 from abc import ABC, abstractmethod
 
 '''
 We want to:
-Generate random bounding boxes (multiple scans)
-Fit grid onto scans
+Generate random bounding boxes (multiple injections)
+Fit grid onto injections
 Find overlap of bounding boxes
 (Plot results for reasons of intuition? Use matplotlib rectangles and (potentially) text to indicate box area...)
 '''
+
+#controller with TopN for first run, intensity*non-overlap on further runs
+#add bounding box points to RoI class
+#priorisation function based on peak-picking and non-overlap
+#use proportion of area
+#m/z grid doesn't have to be less than half of mass tolerance
+#rt grid should be a bit less than the sampling time
+#@dataclass?
 
 class Box():
     def __init__(self, x1, x2, y1, y2):
@@ -47,7 +56,7 @@ class Grid():
         
 class DictGrid(Grid):
     @staticmethod
-    def init_boxes(rtboxes, mzboxes): return {(rt, mz) : [] for rt in rtboxes for mz in mzboxes}
+    def init_boxes(rtboxes, mzboxes): return defaultdict(list)
     
     def box_non_overlap(self, box, *boxes):
         rt_box_range, mz_box_range = self.get_box_ranges(box)
@@ -75,7 +84,7 @@ class BoxEnv():
         self.max_mz = max_mz
         self.min_x1, self.max_x1 = min_rt, max_rt - max_xlen
         self.min_xlen, self.max_xlen, self.min_ylen, self.max_ylen = min_xlen, max_xlen, min_ylen, max_ylen
-        self.boxes_by_scan = []
+        self.boxes_by_injection = []
         self.grid = None
         
     def init_grid(self, grid_class, rt_box_size, mz_box_size):
@@ -88,7 +97,7 @@ class BoxEnv():
         return Box(x1, x1 + xlen, 0, ylen)
 
     @classmethod
-    def random_boxenv(cls, no_scans=3):
+    def random_boxenv(cls, no_injections=3):
         min_rt, max_rt = 0, random.randint(1000, 2000)
         max_mz = random.randint(1000, 3000)
         min_xlen = random.randint(1, 25)
@@ -96,7 +105,7 @@ class BoxEnv():
         min_ylen = random.randint(100, 1000)
         max_ylen = max_mz - min_ylen
         boxenv = BoxEnv(min_rt, max_rt, max_mz, min_xlen, max_xlen, min_ylen, max_ylen)
-        for i in range(no_scans): boxenv.boxes_by_scan.append([boxenv.generate_box() for i in range(50)])
+        for i in range(no_injections): boxenv.boxes_by_injection.append([boxenv.generate_box() for i in range(10)])
         return boxenv
         
     @staticmethod
@@ -129,26 +138,26 @@ class BoxEnv():
         '''
         pass
         
-    def box_uniqueness_by_scan(self, non_overlap):
-        return [[non_overlap(box, *self.boxes_by_scan[:i], *scan[:j]) for j, box in enumerate(scan)] for i, scan in enumerate(self.boxes_by_scan)]
+    def box_uniqueness_by_injection(self, non_overlap):
+        return [[non_overlap(box, *self.boxes_by_injection[:i], *inj[:j]) for j, box in enumerate(inj)] for i, inj in enumerate(self.boxes_by_injection)]
         
 def main():
     def run_area_calcs(boxenv, rt_box_size, mz_box_size):
         boxenv.init_grid(DictGrid, rt_box_size, mz_box_size)
-        scores_by_scan = boxenv.box_uniqueness_by_scan(boxenv.grid_non_overlap)
-        print(scores_by_scan)
+        scores_by_injection = boxenv.box_uniqueness_by_injection(boxenv.grid_non_overlap)
+        print(scores_by_injection)
     
         boxenv.init_grid(ArrayGrid, rt_box_size, mz_box_size)
-        scores_by_scan_2 = boxenv.box_uniqueness_by_scan(boxenv.grid_non_overlap)
-        print(scores_by_scan_2)
+        scores_by_injection_2 = boxenv.box_uniqueness_by_injection(boxenv.grid_non_overlap)
+        print(scores_by_injection_2)
     
     boxenv = BoxEnv.random_boxenv()
-    scores_by_scan = boxenv.box_uniqueness_by_scan(boxenv.dummy_non_overlap)
-    print(scores_by_scan)
+    scores_by_injection = boxenv.box_uniqueness_by_injection(boxenv.dummy_non_overlap)
+    print(scores_by_injection)
     run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 1000, boxenv.max_mz / 1000)
     
     boxenv = BoxEnv(0, 50, 50, 2, 3, 2, 3)
-    boxenv.boxes_by_scan = [[Box(0, 10, 0, 30), Box(5, 15, 0, 30), Box(0, 10, 15, 45), Box(13, 17, 0, 30)]]
-    run_area_calcs(boxenv, 0.05, 0.05)
+    boxenv.boxes_by_injection = [[Box(0, 10, 0, 30), Box(5, 15, 0, 30), Box(0, 10, 15, 45), Box(0, 17, 0, 30)]]
+    run_area_calcs(boxenv, 0.2, 0.2)
     
 main()
