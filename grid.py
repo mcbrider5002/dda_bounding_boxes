@@ -54,27 +54,20 @@ class GenericBox(Box):
                )
                
     def split_box(self, other_box):
-    
         if(not self.overlaps_with_box(other_box)): return None
-    
-        left = other_box.pt1.x if other_box.pt1.x > self.pt1.x else None
-        right = other_box.pt2.x if other_box.pt2.x > self.pt2.x else None
-        low = other_box.pt1.y if other_box.pt1.y > self.pt1.y else None
-        high = other_box.pt2.y if other_box.pt2.y > self.pt2.y else None
-        
         x1, x2, y1, y2 = self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y
         split_boxes = []
-        if(not left is None):
-            x1 = left
+        if(other_box.pt1.x > self.pt1.x):
+            x1 = other_box.pt1.x
             split_boxes.append(GenericBox(self.pt1.x, x1, y1, y2))
-        if(not right is None):
-            x2 = right
+        if(other_box.pt2.x > self.pt2.x):
+            x2 = other_box.pt2.x
             split_boxes.append(GenericBox(x2, self.pt2.x, y1, y2))
-        if(not low is None):
-            y1 = low
+        if(other_box.pt1.y > self.pt1.y):
+            y1 = other_box.pt1.y
             split_boxes.append(GenericBox(x1, x2, self.pt1.y, y1))
-        if(not high is None):
-            y2 = high
+        if(other_box.pt2.y > self.pt2.y):
+            y2 = other_box.pt2.y
             split_boxes.append(GenericBox(x1, x2, y2, self.pt2.y))
         if(len(split_boxes) <= 2):
             self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y = x1, x2, y1, y2
