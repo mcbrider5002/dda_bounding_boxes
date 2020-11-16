@@ -15,7 +15,11 @@ Find overlap of bounding boxes
 '''
 
 #TODO:
-#implement exact method
+#implement exact method special case
+#implement grid for exact method
+#test add boxes
+#use scoring object
+#implement general case of box splitting?
 #@dataclass?
 #plot boxes?
 
@@ -26,21 +30,22 @@ Find overlap of bounding boxes
 #rt grid should be a bit less than the sampling time
 
 class Point():
-    def __init__(self, x, y):
-        self.x, self.y = x, y
+    def __init__(self, x, y): self.x, self.y = float(x), float(y)
+    def __repr__(self): return "Point({}, {})".format(self.x, self.y)
 
 class Box():
     def __init__(self, x1, x2, y1, y2):
         self.pt1 = Point(min(x1, x2), min(y1, y2))
         self.pt2 = Point(max(x1, x2), max(y1, y2))
         
-    def __repr__(self): return "Box({} {})".format(self.pt1, self.pt2)
-    def area(self): return (x2 - x1) * (y2 - y1)
+    def __repr__(self): return "Box({}, {})".format(self.pt1, self.pt2)
+    def area(self): return (self.pt2.x - self.pt1.x) * (self.pt2.y - self.pt1.y)
+    def copy(self): return type(self)(self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y)
         
 class GenericBox(Box):
     '''Makes no particular assumptions about bounding boxes.'''
     
-    def __repr__(self): return "Generic{}".format(super().__repr__(self))
+    def __repr__(self): return "Generic{}".format(super().__repr__())
     
     def overlaps_with_box(self, other_box):
         return (self.pt1.x < other_box.pt2.x and self.pt2.x > other_box.pt1.x) and (self.pt1.y < other_box.pt2.y and self.pt2.y > other_box.pt1.y)
@@ -54,30 +59,33 @@ class GenericBox(Box):
                )
                
     def split_box(self, other_box):
+        '''Finds 1 to 4 boxes describing the polygon of area of this box not overlapped by other_box.
+           If one box is found, crops this box to dimensions of that box, and returns None.
+           Otherwise, returns list of 2 to 4 boxes. Number of boxes found is equal to number of edges overlapping area does NOT share with this box.'''
         if(not self.overlaps_with_box(other_box)): return None
         x1, x2, y1, y2 = self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y
         split_boxes = []
         if(other_box.pt1.x > self.pt1.x):
             x1 = other_box.pt1.x
             split_boxes.append(GenericBox(self.pt1.x, x1, y1, y2))
-        if(other_box.pt2.x > self.pt2.x):
+        if(other_box.pt2.x < self.pt2.x):
             x2 = other_box.pt2.x
             split_boxes.append(GenericBox(x2, self.pt2.x, y1, y2))
         if(other_box.pt1.y > self.pt1.y):
             y1 = other_box.pt1.y
             split_boxes.append(GenericBox(x1, x2, self.pt1.y, y1))
-        if(other_box.pt2.y > self.pt2.y):
+        if(other_box.pt2.y < self.pt2.y):
             y2 = other_box.pt2.y
             split_boxes.append(GenericBox(x1, x2, y2, self.pt2.y))
-        if(len(split_boxes) <= 2):
-            self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y = x1, x2, y1, y2
+        if(len(split_boxes) == 1):
+            self.pt1, self.pt2 = split_boxes[0].pt1, split_boxes[0].pt2
             return None
         return split_boxes
             
 class SpecialBox(Box):
     '''Assumes all boxes have an edge at y=0 and that opposite edge is at y>0.'''
 
-    def __repr__(self): return "Special{}".format(super().__repr__(self))
+    def __repr__(self): return "Special{}".format(super().__repr__())
 
     def overlaps_with_box(self, other_box): 
         return (self.pt1.x < other_box.pt2.x and self.pt2.x > other_box.pt1.x)
@@ -163,18 +171,18 @@ class BoxEnv():
         x1 = random.uniform(self.min_x1, self.max_x1)
         xlen = random.uniform(self.min_xlen, self.max_xlen)
         ylen = random.uniform(self.min_ylen, self.max_ylen)
-        return Box(x1, x1 + xlen, 0, ylen)
+        return GenericBox(x1, x1 + xlen, 0, ylen)
 
     @classmethod
     def random_boxenv(cls, no_injections=3):
         min_rt, max_rt = 0, random.randint(1000, 2000)
         max_mz = random.randint(1000, 3000)
-        min_xlen = random.randint(1, 25)
-        max_xlen = random.randint(min_xlen, 50)
+        min_xlen = random.randint(1, 4)
+        max_xlen = random.randint(min_xlen, 10)
         min_ylen = random.randint(100, 1000)
         max_ylen = max_mz - min_ylen
         boxenv = BoxEnv(min_rt, max_rt, max_mz, min_xlen, max_xlen, min_ylen, max_ylen)
-        for i in range(no_injections): boxenv.boxes_by_injection.append([boxenv.generate_box() for j in range(50)])
+        boxenv.boxes_by_injection = [[boxenv.generate_box() for j in range(10000)] for i in range(no_injections)]
         return boxenv
         
     @staticmethod
@@ -186,33 +194,22 @@ class BoxEnv():
     
     @staticmethod
     def splitting_non_overlap(box, *other_boxes):
-        new_boxes = [box] #more efficient splitting with set?
-        for b in other_boxes: #potentially filter boxes down via grid with large boxes for this loop?
+        new_boxes = [box.copy()] #more efficient splitting with set?
+        for b in other_boxes: #potentially filter boxes down via grid with large boxes for this loop? + boxes could be potentially sorted by size (O(n) insert time in worst-case)
             if(box.overlaps_with_box(b)): #quickly exits any box not overlapping new box
                 for b2 in new_boxes:
-                    if(b.contains_box(b2)):
+                    if(b.contains_box(b2)): #your box is contained within a previous box, in which case area is 0 (remove box from list, return if list is empty)
                         new_boxes.remove(b2)
                         if(not new_boxes): return 0
                     else:
-                        split_boxes = b2.split_boxes(b)
+                        split_boxes = b2.split_box(b)
                         if(not split_boxes is None):
                             new_boxes.remove(b2)
                             new_boxes.extend(split_boxes)
-        return sum(b.area() for b in new_boxes)
-        
-        '''case analysis:
-            - your box is contained within a previous box, in which case area is 0 (remove box from list, return if list is empty)
-            - your box contains a previous box, in which case split your box into up to four new boxes, one for each edge they don't have in common (if they have all four edges in common, then box is completely overlapped)
-            - neither of the previous statements are true, but boxes still overlap, then new box can contain 0, 1 or 2 of previous box's corners
-              - if 0, then previous box completely overlaps one dimension, and you can just crop the new box
-              - if 1, there will be a corner inside your new box, and you will need to split it into 2
-              - if 2, box overlaps part of your dimension, so you will need to split into 3
-        ^could be simplified by organising by number of points
-        
-        boxes could be potentially sorted by size (O(n) insert time in worst-case)'''
+        return sum(b.area() for b in new_boxes) / box.area()
         
     def box_uniqueness_by_injection(self, non_overlap_f):
-        return [[non_overlap_f(box, *self.boxes_by_injection[:i], *inj[:j]) for j, box in enumerate(inj)] for i, inj in enumerate(self.boxes_by_injection)]
+        return [[non_overlap_f(box, *itertools.chain(*self.boxes_by_injection[:i]), *inj[:j]) for j, box in enumerate(inj)] for i, inj in enumerate(self.boxes_by_injection)]
         
     class BoxScores():
         def __init__(non_overlap):
@@ -228,22 +225,30 @@ class BoxEnv():
         
 def main():
     def run_area_calcs(boxenv, rt_box_size, mz_box_size):
-        print("Run area calcs start!")
+        def pretty_print(scores):
+            print({i : x for i, x in enumerate(itertools.chain(*scores))})
+        print("\nRun area calcs start!")
+        print("DictGrid Scores:")
         boxenv.init_grid(DictGrid, rt_box_size, mz_box_size)
         scores_by_injection = boxenv.box_uniqueness_by_injection(boxenv.grid_non_overlap)
-        print(scores_by_injection)
+        pretty_print(scores_by_injection)
     
+        print("BoolArrayGrid Scores:")
         boxenv.init_grid(ArrayGrid, rt_box_size, mz_box_size)
         scores_by_injection_2 = boxenv.box_uniqueness_by_injection(boxenv.grid_non_overlap)
-        print(scores_by_injection_2)
+        pretty_print(scores_by_injection_2)
+        
+        print("Exact Scores:")
+        scores_by_injection_3 = boxenv.box_uniqueness_by_injection(boxenv.splitting_non_overlap)
+        pretty_print(scores_by_injection_3)
     
     boxenv = BoxEnv.random_boxenv()
     scores_by_injection = boxenv.box_uniqueness_by_injection(boxenv.dummy_non_overlap)
     print(scores_by_injection)
-    run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 1000, boxenv.max_mz / 1000)
+    run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 2000, boxenv.max_mz / 2000)
     
     boxenv = BoxEnv(0, 50, 50, 2, 3, 2, 3)
-    boxenv.boxes_by_injection = [[Box(0, 10, 0, 30), Box(5, 15, 0, 30), Box(0, 10, 15, 45), Box(0, 17, 0, 30)]]
+    boxenv.boxes_by_injection = [[GenericBox(0, 10, 0, 30), GenericBox(5, 15, 0, 30), GenericBox(0, 10, 15, 45), GenericBox(0, 17, 0, 30)]]
     run_area_calcs(boxenv, 0.2, 0.2)
     
 main()
