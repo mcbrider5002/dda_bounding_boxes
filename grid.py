@@ -5,6 +5,7 @@ import numpy as np
 from decimal import Decimal
 from collections import defaultdict
 from abc import ABC, abstractmethod
+from time import perf_counter
 
 '''
 We want to:
@@ -39,6 +40,7 @@ class Box():
         self.pt2 = Point(max(x1, x2), max(y1, y2))
         
     def __repr__(self): return "Box({}, {})".format(self.pt1, self.pt2)
+    def __hash__(self): return (self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y).__hash__()
     def area(self): return (self.pt2.x - self.pt1.x) * (self.pt2.y - self.pt1.y)
     def copy(self): return type(self)(self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y)
         
@@ -194,7 +196,7 @@ class BoxEnv():
     
     @staticmethod
     def splitting_non_overlap(box, *other_boxes):
-        new_boxes = [box.copy()] #more efficient splitting with set?
+        new_boxes = [box.copy()]
         for b in other_boxes: #potentially filter boxes down via grid with large boxes for this loop? + boxes could be potentially sorted by size (O(n) insert time in worst-case)
             if(box.overlaps_with_box(b)): #quickly exits any box not overlapping new box
                 for b2 in new_boxes:
@@ -224,28 +226,39 @@ class BoxEnv():
         return scores
         
 def main():
+    class Timer():
+        def __init__(self): self.time = None
+        def start_time(self): self.time = perf_counter()
+        def end_time(self): return perf_counter() - self.time
+        def time_f(self, f):
+            self.start_time()
+            result = f()
+            return result, self.end_time()
+    
     def run_area_calcs(boxenv, rt_box_size, mz_box_size):
         def pretty_print(scores):
             print({i : x for i, x in enumerate(itertools.chain(*scores))})
         print("\nRun area calcs start!")
-        print("DictGrid Scores:")
+        print("\nDictGrid Scores:")
         boxenv.init_grid(DictGrid, rt_box_size, mz_box_size)
-        scores_by_injection = boxenv.box_uniqueness_by_injection(boxenv.grid_non_overlap)
+        scores_by_injection, dict_time = Timer().time_f(lambda: boxenv.box_uniqueness_by_injection(boxenv.grid_non_overlap))
         pretty_print(scores_by_injection)
     
-        print("BoolArrayGrid Scores:")
+        print("\nBoolArrayGrid Scores:")
         boxenv.init_grid(ArrayGrid, rt_box_size, mz_box_size)
-        scores_by_injection_2 = boxenv.box_uniqueness_by_injection(boxenv.grid_non_overlap)
+        scores_by_injection_2, array_time = Timer().time_f(lambda: boxenv.box_uniqueness_by_injection(boxenv.grid_non_overlap))
         pretty_print(scores_by_injection_2)
         
-        print("Exact Scores:")
-        scores_by_injection_3 = boxenv.box_uniqueness_by_injection(boxenv.splitting_non_overlap)
+        print("\nExact Scores:")
+        scores_by_injection_3, exact_time = Timer().time_f(lambda: boxenv.box_uniqueness_by_injection(boxenv.splitting_non_overlap))
         pretty_print(scores_by_injection_3)
+        
+        print("\nDictGrid Time Taken: {}".format(dict_time))
+        print("BoolArray Time Taken: {}".format(array_time))
+        print("BoxSplitting Time Taken: {}".format(exact_time))
     
     boxenv = BoxEnv.random_boxenv()
-    scores_by_injection = boxenv.box_uniqueness_by_injection(boxenv.dummy_non_overlap)
-    print(scores_by_injection)
-    run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 2000, boxenv.max_mz / 2000)
+    run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 4000, boxenv.max_mz / 4000)
     
     boxenv = BoxEnv(0, 50, 50, 2, 3, 2, 3)
     boxenv.boxes_by_injection = [[GenericBox(0, 10, 0, 30), GenericBox(5, 15, 0, 30), GenericBox(0, 10, 15, 45), GenericBox(0, 17, 0, 30)]]
