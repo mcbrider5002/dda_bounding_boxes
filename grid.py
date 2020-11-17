@@ -85,22 +85,38 @@ class GenericBox(Box):
         return split_boxes
             
 class SpecialBox(Box):
-    '''Assumes all boxes have an edge at y=0 and that opposite edge is at y>0.'''
+    '''Assumes all boxes compared to this box have an edge at y=0 and an opposite edge at y>0.'''
 
     def __repr__(self): return "Special{}".format(super().__repr__())
 
-    def overlaps_with_box(self, other_box): 
-        return (self.pt1.x < other_box.pt2.x and self.pt2.x > other_box.pt1.x)
+    def overlaps_with_box(self, other_box):
+        return (self.pt1.x < other_box.pt2.x and self.pt2.x > other_box.pt1.x) and self.pt1.y < other_box.pt2.y
 
     def contains_box(self, other_box):
         return (
                 self.pt1.x <= other_box.pt1.x 
                 and self.pt2.x >= other_box.pt2.x 
+                and self.pt1.y <= 0
                 and self.pt2.y >= other_box.pt2.y
                )
                
     def split_box(self, other_box):
-        pass
+        if(not self.overlaps_with_box(other_box)): return None
+        x1, x2, y2 = self.pt1.x, self.pt2.x, self.pt2.y
+        split_boxes = []
+        if(other_box.pt1.x > self.pt1.x):
+            x1 = other_box.pt1.x
+            split_boxes.append(SpecialBox(self.pt1.x, x1, 0, y2))
+        if(other_box.pt2.x < self.pt2.x):
+            x2 = other_box.pt2.x
+            split_boxes.append(SpecialBox(x2, self.pt2.x, 0, y2))
+        if(other_box.pt2.y < self.pt2.y):
+            y2 = other_box.pt2.y
+            split_boxes.append(SpecialBox(x1, x2, 0, self.pt2.y))
+        if(len(split_boxes) == 1):
+            self.pt1, self.pt2 = split_boxes[0].pt1, split_boxes[0].pt2
+            return None
+        return split_boxes
 
 class Grid():
 
