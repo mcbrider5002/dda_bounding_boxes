@@ -16,11 +16,8 @@ Find overlap of bounding boxes
 '''
 
 #TODO:
-#split boxenv for stream case (i.e. add one box at a time)
-#add method to add fragmented boxes
 #debug exact method special case
-#test add boxes
-#use scoring object
+#use scoring object?
 #implement general case of box splitting?
 #@dataclass?
 #plot boxes?
@@ -141,32 +138,37 @@ class Grid():
         total_boxes = (rt_box_range[1] - rt_box_range[0]) * (mz_box_range[1] - mz_box_range[0])
         return rt_box_range, mz_box_range, total_boxes
 
-class ApproxGrid(Grid):
     @abstractmethod
-    def box_non_overlap(self, box, *boxes): pass
+    def non_overlap(self, box): pass
         
-class DictGrid(ApproxGrid):
+    @abstractmethod
+    def register_box(self, box): pass   
+        
+class DictGrid(Grid):
     @staticmethod
     def init_boxes(rtboxes, mzboxes): return defaultdict(list)
     
-    def box_non_overlap(self, box, *boxes):
+    def non_overlap(self, box):
         rt_box_range, mz_box_range, total_boxes = self.get_box_ranges(box)
-        def non_overlap(rt, mz):
-            result = 1.0 if not self.boxes[(rt, mz)] else 0.0
-            self.boxes[(rt, mz)].append(box)
-            return result
-        return sum(non_overlap(rt, mz) for rt in range(*rt_box_range) for mz in range(*mz_box_range)) / total_boxes
+        return sum(float(not self.boxes[(rt, mz)]) for rt in range(*rt_box_range) for mz in range(*mz_box_range)) / total_boxes
+        
+    def register_box(self, box):
+        rt_box_range, mz_box_range, _ = self.get_box_ranges(box)
+        for rt in range(*rt_box_range):
+            for mz in range(*mz_box_range): self.boxes[(rt, mz)].append(box)
     
-class ArrayGrid(ApproxGrid):
+class ArrayGrid(Grid):
     @staticmethod
     def init_boxes(rtboxes, mzboxes): return np.array([[False for mz in mzboxes] for rt in rtboxes])
     
-    def box_non_overlap(self, box, *boxes):
+    def non_overlap(self, box):
         rt_box_range, mz_box_range, total_boxes = self.get_box_ranges(box)
-        boxes = self.boxes[rt_box_range[0]:rt_box_range[1], mz_box_range[0]:mz_box_range[1]]
-        falses = total_boxes - np.sum(boxes)
+        boxes = self.boxes[rt_box_range[0]:rt_box_range[1], mz_box_range[0]:mz_box_range[1]] 
+        return (total_boxes - np.sum(boxes)) / total_boxes
+        
+    def register_box(self, box):
+        rt_box_range, mz_box_range, _ = self.get_box_ranges(box)
         self.boxes[rt_box_range[0]:rt_box_range[1], mz_box_range[0]:mz_box_range[1]] = True
-        return falses / total_boxes
         
 class LocatorGrid(Grid):
     @staticmethod
@@ -182,63 +184,14 @@ class LocatorGrid(Grid):
         for row in self.boxes[rt_box_range[0]:rt_box_range[1], mz_box_range[0]:mz_box_range[1]]:
             for ls in row: boxes.append(ls)
         return boxes
-
-    def add_box(self, box):
-        rt_box_range, mz_box_range, _ = self.get_box_ranges(box)
-        for row in self.boxes[rt_box_range[0]:rt_box_range[1], mz_box_range[0]:mz_box_range[1]]:
-            for ls in row: ls.append(box)
-        
-class BoxEnv():
-
-    def __init__(self, min_rt, max_rt, max_mz, min_xlen, max_xlen, min_ylen, max_ylen):
-        self.min_rt, self.max_rt = min_rt, max_rt
-        self.max_mz = max_mz
-        self.min_x1, self.max_x1 = min_rt, max_rt - max_xlen
-        self.min_xlen, self.max_xlen, self.min_ylen, self.max_ylen = min_xlen, max_xlen, min_ylen, max_ylen
-        self.injection_index = 0
-        self.boxes_by_injection = [[]]
-        self.grid = None
-        self.loc_grid = None
-        
-    def set_injection_no(n): self.injection_no = n
-    def next_injection(n):
-        self.boxes_by_injection.append([])
-        self.injection_index += 1
-        
-    def init_grid(self, grid_class, rt_box_size, mz_box_size):
-        self.grid = grid_class(self.min_rt, self.max_rt, rt_box_size, 0, self.max_mz, mz_box_size)
-        
-    def init_loc_grid(self, grid_class, rt_box_size, mz_box_size):
-        self.loc_grid = grid_class(self.min_rt, self.max_rt, rt_box_size, 0, self.max_mz, mz_box_size)
-        
-    def generate_box(self):
-        x1 = random.uniform(self.min_x1, self.max_x1)
-        xlen = random.uniform(self.min_xlen, self.max_xlen)
-        ylen = random.uniform(self.min_ylen, self.max_ylen)
-        return GenericBox(x1, x1 + xlen, 0, ylen)
-
-    @classmethod
-    def random_boxenv(cls, no_injections=3):
-        min_rt, max_rt = 0, random.randint(1000, 2000)
-        max_mz = random.randint(1000, 3000)
-        min_xlen = random.randint(1, 4)
-        max_xlen = random.randint(min_xlen, 10)
-        min_ylen = random.randint(100, 1000)
-        max_ylen = max_mz - min_ylen
-        boxenv = BoxEnv(min_rt, max_rt, max_mz, min_xlen, max_xlen, min_ylen, max_ylen)
-        boxenv.boxes_by_injection = [[boxenv.generate_box() for j in range(10000)] for i in range(no_injections)]
-        return boxenv
         
     @staticmethod
-    def dummy_non_overlap(box, *other_boxes): return 1.0
+    def dummy_non_overlap(box, *other_boxes): return 1.0   
         
-    def grid_non_overlap(self, box, *other_boxes):
-        return self.grid.box_non_overlap(box, *other_boxes)
-    
     @staticmethod
     def splitting_non_overlap(box, *other_boxes):
         new_boxes = [box.copy()]
-        for b in other_boxes: #potentially filter boxes down via grid with large boxes for this loop? + boxes could be potentially sorted by size (O(n) insert time in worst-case)
+        for b in other_boxes: #filter boxes down via grid with large boxes for this loop + boxes could be potentially sorted by size (O(n) insert time in worst-case)?
             if(box.overlaps_with_box(b)): #quickly exits any box not overlapping new box
                 for b2 in new_boxes:
                     if(b.contains_box(b2)): #your box is contained within a previous box, in which case area is 0 (remove box from list, return if list is empty)
@@ -251,27 +204,71 @@ class BoxEnv():
                             new_boxes.extend(split_boxes)
         return sum(b.area() for b in new_boxes) / box.area()
         
-    def splitting_non_overlap_grid(self, box):
-        other_boxes = self.loc_grid.get_boxes(box)
-        area = self.splitting_non_overlap(box, *itertools.chain(*other_boxes))
-        self.loc_grid.add_box(box)
-        return area
+    def non_overlap(self, box):
+        return self.splitting_non_overlap(box, *itertools.chain(*self.get_boxes(box)))
+
+    def register_box(self, box):
+        rt_box_range, mz_box_range, _ = self.get_box_ranges(box)
+        for row in self.boxes[rt_box_range[0]:rt_box_range[1], mz_box_range[0]:mz_box_range[1]]:
+            for ls in row: ls.append(box)
         
-    def box_uniqueness_by_injection(self, non_overlap_f, grid=False):
-        if(grid): return [[non_overlap_f(box) for j, box in enumerate(inj)] for i, inj in enumerate(self.boxes_by_injection)]
-        else: return [[non_overlap_f(box, *itertools.chain(*self.boxes_by_injection[:i]), *inj[:j]) for j, box in enumerate(inj)] for i, inj in enumerate(self.boxes_by_injection)]     
+class BoxEnv():
+    def __init__(self, min_rt, max_rt, max_mz, min_xlen, max_xlen, min_ylen, max_ylen):
+        self.min_rt, self.max_rt = min_rt, max_rt
+        self.max_mz = max_mz
+        self.min_x1, self.max_x1 = min_rt, max_rt - max_xlen
+        self.min_xlen, self.max_xlen, self.min_ylen, self.max_ylen = min_xlen, max_xlen, min_ylen, max_ylen
+        self.grid = None        
+        
+    def init_grid(self, grid_class, rt_box_size, mz_box_size):
+        self.grid = grid_class(self.min_rt, self.max_rt, rt_box_size, 0, self.max_mz, mz_box_size)
+        
+    def generate_box(self):
+        x1 = random.uniform(self.min_x1, self.max_x1)
+        xlen = random.uniform(self.min_xlen, self.max_xlen)
+        ylen = random.uniform(self.min_ylen, self.max_ylen)
+        return GenericBox(x1, x1 + xlen, 0, ylen)
+        
+    @classmethod
+    def random_boxenv(cls):
+        min_rt, max_rt = 0, random.randint(1000, 2000)
+        max_mz = random.randint(1000, 3000)
+        min_xlen = random.randint(1, 4)
+        max_xlen = random.randint(min_xlen, 10)
+        min_ylen = random.randint(100, 1000)
+        max_ylen = max_mz - min_ylen
+        return BoxEnv(min_rt, max_rt, max_mz, min_xlen, max_xlen, min_ylen, max_ylen)        
+        
+    def box_score(self, box): return self.grid.non_overlap(box)
+    def register_box(self, box): self.grid.register_box(box)
         
     class BoxScores():
+        '''Unused for now: use to package other kinds of score later?'''
         def __init__(non_overlap):
             self.non_overlap = non_overlap
         
-    def add_boxes(non_overlap_f, *boxes):
-        scores = []
-        for b in boxes:
-            non_overlap = non_overlap_f(b, itertools.chain(*self.boxes_by_injection))
-            scores.append(BoxScores(non_overlap))
-            self.boxes_by_injection[self.injection_index].append(b)
-        return scores
+class TestEnv(BoxEnv):
+    def __init__(self, min_rt, max_rt, max_mz, min_xlen, max_xlen, min_ylen, max_ylen):
+        super().__init__(min_rt, max_rt, max_mz, min_xlen, max_xlen, min_ylen, max_ylen)
+        self.boxes_by_injection = [[]]
+
+    @classmethod
+    def random_boxenv(cls, boxes_per_injection, no_injections):
+        boxenv = super().random_boxenv()
+        boxenv = TestEnv(boxenv.min_rt, boxenv.max_rt, boxenv.max_mz, boxenv.min_xlen, boxenv.max_xlen, boxenv.min_ylen, boxenv.max_ylen)
+        boxenv.boxes_by_injection = [[boxenv.generate_box() for j in range(boxes_per_injection)] for i in range(no_injections)]
+        return boxenv
+    
+    def test_simple_splitter(self):
+        return [[LocatorGrid.splitting_non_overlap(box, *itertools.chain(*self.boxes_by_injection[:i]), *inj[:j]) for j, box in enumerate(inj)] for i, inj in enumerate(self.boxes_by_injection)]
+
+    def test_non_overlap(self, grid_class, rt_box_size, mz_box_size):
+        self.init_grid(grid_class, rt_box_size, mz_box_size)
+        def score_box(box):
+            score = self.grid.non_overlap(box)
+            self.grid.register_box(box)
+            return score
+        return [[score_box(b) for b in inj] for inj in self.boxes_by_injection]
         
 def main():
     class Timer():
@@ -288,22 +285,20 @@ def main():
             print({i : x for i, x in enumerate(itertools.chain(*scores))})
         print("\nRun area calcs start!")
         print("\nDictGrid Scores:")
-        boxenv.init_grid(DictGrid, rt_box_size, mz_box_size)
-        scores_by_injection, dict_time = Timer().time_f(lambda: boxenv.box_uniqueness_by_injection(boxenv.grid_non_overlap))
+        scores_by_injection, dict_time = Timer().time_f(lambda: boxenv.test_non_overlap(DictGrid, rt_box_size, mz_box_size))
         pretty_print(scores_by_injection)
     
         print("\nBoolArrayGrid Scores:")
-        boxenv.init_grid(ArrayGrid, rt_box_size, mz_box_size)
-        scores_by_injection_2, array_time = Timer().time_f(lambda: boxenv.box_uniqueness_by_injection(boxenv.grid_non_overlap))
+        scores_by_injection_2, array_time = Timer().time_f(lambda: boxenv.test_non_overlap(ArrayGrid, rt_box_size, mz_box_size))
         pretty_print(scores_by_injection_2)
         
         print("\nExact Scores:")
-        scores_by_injection_3, exact_time = Timer().time_f(lambda: boxenv.box_uniqueness_by_injection(boxenv.splitting_non_overlap))
+        scores_by_injection_3, exact_time = Timer().time_f(lambda: boxenv.test_simple_splitter())
         pretty_print(scores_by_injection_3)
         
         print("\nExact Scores Grid:")
-        boxenv.init_loc_grid(LocatorGrid, (boxenv.max_rt - boxenv.min_rt) / 50, boxenv.max_mz / 1)
-        scores_by_injection_4, exact_grid_time = Timer().time_f(lambda: boxenv.box_uniqueness_by_injection(boxenv.splitting_non_overlap_grid, grid=True))
+        rt_box_size, mz_box_size = (boxenv.max_rt - boxenv.min_rt) / 50, boxenv.max_mz / 1
+        scores_by_injection_4, exact_grid_time = Timer().time_f(lambda: boxenv.test_non_overlap(LocatorGrid, rt_box_size, mz_box_size))
         pretty_print(scores_by_injection_4)
         
         print("\nDictGrid Time Taken: {}".format(dict_time))
@@ -311,10 +306,10 @@ def main():
         print("BoxSplitting Time Taken: {}".format(exact_time))
         print("BoxSplitting with Grid Time Taken {}".format(exact_grid_time))
     
-    boxenv = BoxEnv.random_boxenv()
-    run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 2000, boxenv.max_mz / 2000)
+    boxenv = TestEnv.random_boxenv(50, 3)
+    run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 4000, boxenv.max_mz / 4000)
     
-    boxenv = BoxEnv(0, 50, 50, 2, 3, 2, 3)
+    boxenv = TestEnv(0, 50, 50, 2, 3, 2, 3)
     boxenv.boxes_by_injection = [[GenericBox(0, 10, 0, 30), GenericBox(5, 15, 0, 30), GenericBox(0, 10, 15, 45), GenericBox(0, 17, 0, 30)]]
     run_area_calcs(boxenv, 0.2, 0.2)
     
