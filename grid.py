@@ -16,7 +16,6 @@ Find overlap of bounding boxes
 '''
 
 #TODO:
-#debug exact method special case
 #use scoring object?
 #implement general case of box splitting?
 #@dataclass?
@@ -77,40 +76,6 @@ class GenericBox(Box):
         if(other_box.pt2.y < self.pt2.y):
             y2 = other_box.pt2.y
             split_boxes.append(GenericBox(x1, x2, y2, self.pt2.y))
-        if(len(split_boxes) == 1):
-            self.pt1, self.pt2 = split_boxes[0].pt1, split_boxes[0].pt2
-            return None
-        return split_boxes
-            
-class SpecialBox(Box):
-    '''Assumes all boxes compared to this box have an edge at y=0 and an opposite edge at y>0.'''
-
-    def __repr__(self): return "Special{}".format(super().__repr__())
-
-    def overlaps_with_box(self, other_box):
-        return (self.pt1.x < other_box.pt2.x and self.pt2.x > other_box.pt1.x) and self.pt1.y < other_box.pt2.y
-
-    def contains_box(self, other_box):
-        return (
-                self.pt1.x <= other_box.pt1.x 
-                and self.pt2.x >= other_box.pt2.x 
-                and self.pt1.y <= 0
-                and self.pt2.y >= other_box.pt2.y
-               )
-               
-    def split_box(self, other_box):
-        if(not self.overlaps_with_box(other_box)): return None
-        x1, x2, y2 = self.pt1.x, self.pt2.x, self.pt2.y
-        split_boxes = []
-        if(other_box.pt1.x > self.pt1.x):
-            x1 = other_box.pt1.x
-            split_boxes.append(SpecialBox(self.pt1.x, x1, 0, y2))
-        if(other_box.pt2.x < self.pt2.x):
-            x2 = other_box.pt2.x
-            split_boxes.append(SpecialBox(x2, self.pt2.x, 0, y2))
-        if(other_box.pt2.y < self.pt2.y):
-            y2 = other_box.pt2.y
-            split_boxes.append(SpecialBox(x1, x2, 0, self.pt2.y))
         if(len(split_boxes) == 1):
             self.pt1, self.pt2 = split_boxes[0].pt1, split_boxes[0].pt2
             return None
@@ -225,9 +190,10 @@ class BoxEnv():
         
     def generate_box(self):
         x1 = random.uniform(self.min_x1, self.max_x1)
+        y1 = random.uniform(0, self.max_mz-self.max_ylen)
         xlen = random.uniform(self.min_xlen, self.max_xlen)
         ylen = random.uniform(self.min_ylen, self.max_ylen)
-        return GenericBox(x1, x1 + xlen, 0, ylen)
+        return GenericBox(x1, x1 + xlen, y1, y1 + ylen)
         
     @classmethod
     def random_boxenv(cls):
@@ -235,8 +201,8 @@ class BoxEnv():
         max_mz = random.randint(1000, 3000)
         min_xlen = random.randint(1, 4)
         max_xlen = random.randint(min_xlen, 10)
-        min_ylen = random.randint(100, 1000)
-        max_ylen = max_mz - min_ylen
+        min_ylen = random.randint(1, 5)
+        max_ylen = random.randint(min_ylen, 10)
         return BoxEnv(min_rt, max_rt, max_mz, min_xlen, max_xlen, min_ylen, max_ylen)        
         
     def box_score(self, box): return self.grid.non_overlap(box)
@@ -297,7 +263,7 @@ def main():
         pretty_print(scores_by_injection_3)
         
         print("\nExact Scores Grid:")
-        rt_box_size, mz_box_size = (boxenv.max_rt - boxenv.min_rt) / 50, boxenv.max_mz / 1
+        rt_box_size, mz_box_size = (boxenv.max_rt - boxenv.min_rt) / 50, boxenv.max_mz / 50
         scores_by_injection_4, exact_grid_time = Timer().time_f(lambda: boxenv.test_non_overlap(LocatorGrid, rt_box_size, mz_box_size))
         pretty_print(scores_by_injection_4)
         
@@ -306,8 +272,8 @@ def main():
         print("BoxSplitting Time Taken: {}".format(exact_time))
         print("BoxSplitting with Grid Time Taken {}".format(exact_grid_time))
     
-    boxenv = TestEnv.random_boxenv(50, 3)
-    run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 4000, boxenv.max_mz / 4000)
+    boxenv = TestEnv.random_boxenv(2000, 3)
+    run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 10000, boxenv.max_mz / 10000)
     
     boxenv = TestEnv(0, 50, 50, 2, 3, 2, 3)
     boxenv.boxes_by_injection = [[GenericBox(0, 10, 0, 30), GenericBox(5, 15, 0, 30), GenericBox(0, 10, 15, 45), GenericBox(0, 17, 0, 30)]]
