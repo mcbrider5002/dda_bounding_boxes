@@ -1,4 +1,3 @@
-import math
 import random
 import itertools
 import numpy as np
@@ -56,6 +55,11 @@ class GenericBox(Box):
                 and self.pt2.x >= other_box.pt2.x 
                 and self.pt2.y >= other_box.pt2.y
                )
+               
+    def overlap_2(self, other_box):
+        if(not self.overlaps_with_box(other_box)): return 0.0
+        b = Box(max(self.pt1.x, other_box.pt1.x), min(self.pt2.x, other_box.pt2.x), max(self.pt1.y, other_box.pt1.y), min(self.pt2.y, other_box.pt2.y))
+        return b.area() / (self.area() + other_box.area() - b.area())
                
     def split_box(self, other_box):
         '''Finds 1 to 4 boxes describing the polygon of area of this box not overlapped by other_box.
@@ -278,5 +282,12 @@ def main():
     boxenv = TestEnv(0, 50, 50, 2, 3, 2, 3)
     boxenv.boxes_by_injection = [[GenericBox(0, 10, 0, 30), GenericBox(5, 15, 0, 30), GenericBox(0, 10, 15, 45), GenericBox(0, 17, 0, 30)]]
     run_area_calcs(boxenv, 0.2, 0.2)
+    
+    print()
+    
+    box = GenericBox(0, 10, 0, 10)
+    other_boxes = [[GenericBox(0+x, 10+x, 0, 10) for x in range(0, 11)], [GenericBox(0, 10, 0+y, 10+y) for y in range(0, 11)], [GenericBox(0+n, 10+n, 0+n, 10+n) for n in range(0, 11)]]
+    for ls in other_boxes:
+        print([box.overlap_2(b) for b in ls])
     
 main()
