@@ -15,10 +15,12 @@ Find overlap of bounding boxes
 '''
 
 #TODO:
+#locatorgrid returns multiples of the same box?
 #use scoring object?
-#implement general case of box splitting?
+#implement general case of box splitting? (and get number of boxes produced/plot boxes?)
 #@dataclass?
 #plot boxes?
+#generalised box for n dimensions?
 
 #add bounding box points to RoI class
 #priorisation function based on peak-picking and non-overlap
@@ -31,9 +33,17 @@ class Point():
     def __repr__(self): return "Point({}, {})".format(self.x, self.y)
 
 class Box():
-    def __init__(self, x1, x2, y1, y2):
+    def __init__(self, x1, x2, y1, y2, min_xwidth=0, min_ywidth=0):
         self.pt1 = Point(min(x1, x2), min(y1, y2))
         self.pt2 = Point(max(x1, x2), max(y1, y2))
+        
+        if(self.pt2.x - self.pt1.x < min_xwidth):
+            midpoint = self.pt1.x + ((self.pt2.x - self.pt1.x) / 2)
+            self.pt1.x, self.pt2.x = midpoint - (min_xwidth / 2), midpoint + (min_xwidth / 2)
+
+        if(self.pt2.y - self.pt1.y < min_ywidth):
+            midpoint = self.pt1.y + ((self.pt2.y - self.pt1.y) / 2)
+            self.pt1.y, self.pt2.y = midpoint - (min_ywidth / 2), midpoint + (min_ywidth / 2)
         
     def __repr__(self): return "Box({}, {})".format(self.pt1, self.pt2)
     def __hash__(self): return (self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y).__hash__()
@@ -165,7 +175,7 @@ class LocatorGrid(Grid):
                 for b2 in new_boxes:
                     if(b.contains_box(b2)): #your box is contained within a previous box, in which case area is 0 (remove box from list, return if list is empty)
                         new_boxes.remove(b2)
-                        if(not new_boxes): return 0
+                        if(not new_boxes): return 0.0
                     else:
                         split_boxes = b2.split_box(b)
                         if(not split_boxes is None):
@@ -275,6 +285,12 @@ def main():
         print("BoolArray Time Taken: {}".format(array_time))
         print("BoxSplitting Time Taken: {}".format(exact_time))
         print("BoxSplitting with Grid Time Taken {}".format(exact_grid_time))
+        
+    def box_adjust(boxenv, *no_boxes):
+        for n in no_boxes:
+            rt_box_size, mz_box_size = (boxenv.max_rt - boxenv.min_rt) / n, boxenv.max_mz / n
+            _, exact_grid_time = Timer().time_f(lambda: boxenv.test_non_overlap(LocatorGrid, rt_box_size, mz_box_size))
+            print("Time with {} Boxes: {}".format(n, exact_grid_time))
     
     boxenv = TestEnv.random_boxenv(2000, 3)
     run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 10000, boxenv.max_mz / 10000)
@@ -289,5 +305,7 @@ def main():
     other_boxes = [[GenericBox(0+x, 10+x, 0, 10) for x in range(0, 11)], [GenericBox(0, 10, 0+y, 10+y) for y in range(0, 11)], [GenericBox(0+n, 10+n, 0+n, 10+n) for n in range(0, 11)]]
     for ls in other_boxes:
         print([box.overlap_2(b) for b in ls])
+        
+    box_adjust(*range(10, 401, 10))
     
 main()
