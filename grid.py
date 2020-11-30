@@ -18,6 +18,8 @@ Find overlap of bounding boxes
 #locatorgrid returns multiples of the same box?
 #use scoring object?
 #implement general case of box splitting? (and get number of boxes produced/plot boxes?)
+#grid for general case of box splitting?
+#check if the contains box in box splitting can be moved
 #@dataclass?
 #plot boxes?
 #generalised box for n dimensions?
@@ -30,12 +32,14 @@ Find overlap of bounding boxes
 
 class Point():
     def __init__(self, x, y): self.x, self.y = float(x), float(y)
+    def __eq__(self, other_point): return self.x == other_point.x and self.y == other_point.y
     def __repr__(self): return "Point({}, {})".format(self.x, self.y)
 
 class Box():
-    def __init__(self, x1, x2, y1, y2, min_xwidth=0, min_ywidth=0):
+    def __init__(self, x1, x2, y1, y2, parents=[], min_xwidth=0, min_ywidth=0):
         self.pt1 = Point(min(x1, x2), min(y1, y2))
         self.pt2 = Point(max(x1, x2), max(y1, y2))
+        self.parents = parents
         
         if(self.pt2.x - self.pt1.x < min_xwidth):
             midpoint = self.pt1.x + ((self.pt2.x - self.pt1.x) / 2)
@@ -46,9 +50,17 @@ class Box():
             self.pt1.y, self.pt2.y = midpoint - (min_ywidth / 2), midpoint + (min_ywidth / 2)
         
     def __repr__(self): return "Box({}, {})".format(self.pt1, self.pt2)
+    def __eq__(self, other_box): return self.pt1 == other_box.pt1 and self.pt2 == other_box.pt2
     def __hash__(self): return (self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y).__hash__()
     def area(self): return (self.pt2.x - self.pt1.x) * (self.pt2.y - self.pt1.y)
     def copy(self): return type(self)(self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y)
+    def shift(self, xshift=0, yshift=0):
+        self.pt1.x += xshift
+        self.pt2.x += xshift
+        self.pt1.y += yshift
+        self.pt2.y += yshift
+    def num_overlaps(self): return 1 if len(self.parents) == 0 else len(self.parents)
+    def top_level_boxes(self): return [self.copy()] if self.parents == [] else self.parents
         
 class GenericBox(Box):
     '''Makes no particular assumptions about bounding boxes.'''
@@ -71,7 +83,7 @@ class GenericBox(Box):
         b = Box(max(self.pt1.x, other_box.pt1.x), min(self.pt2.x, other_box.pt2.x), max(self.pt1.y, other_box.pt1.y), min(self.pt2.y, other_box.pt2.y))
         return b.area() / (self.area() + other_box.area() - b.area())
                
-    def split_box(self, other_box):
+    def non_overlap_split(self, other_box):
         '''Finds 1 to 4 boxes describing the polygon of area of this box not overlapped by other_box.
            If one box is found, crops this box to dimensions of that box, and returns None.
            Otherwise, returns list of 2 to 4 boxes. Number of boxes found is equal to number of edges overlapping area does NOT share with this box.'''
@@ -90,10 +102,20 @@ class GenericBox(Box):
         if(other_box.pt2.y < self.pt2.y):
             y2 = other_box.pt2.y
             split_boxes.append(GenericBox(x1, x2, y2, self.pt2.y))
-        if(len(split_boxes) == 1):
-            self.pt1, self.pt2 = split_boxes[0].pt1, split_boxes[0].pt2
-            return None
         return split_boxes
+        
+    def split_all(self, other_box):
+        #print("\nSplitting on: {}, {}".format(self, other_box))
+        if(not self.overlaps_with_box(other_box)): return None, None, None
+        both_parents = self.top_level_boxes() + other_box.top_level_boxes()
+        #print("Both parents: {}".format(both_parents))
+        both_box = GenericBox(max(self.pt1.x, other_box.pt1.x), min(self.pt2.x, other_box.pt2.x), max(self.pt1.y, other_box.pt1.y), min(self.pt2.y, other_box.pt2.y), parents=both_parents) 
+        b1_boxes = [] if other_box.contains_box(self) else self.non_overlap_split(other_box)
+        b2_boxes = [] if self.contains_box(other_box) else other_box.non_overlap_split(self)
+        '''print("b1_boxes: {}".format(self if b1_boxes is None else b1_boxes))
+        print("b2_boxes: {}".format(other_box if b2_boxes is None else b2_boxes))
+        print("both_box: {}\n".format(both_box))'''
+        return b1_boxes, b2_boxes, both_box
 
 class Grid():
 
@@ -150,6 +172,10 @@ class ArrayGrid(Grid):
         self.boxes[rt_box_range[0]:rt_box_range[1], mz_box_range[0]:mz_box_range[1]] = True
         
 class LocatorGrid(Grid):
+    def __init__(self, min_rt, max_rt, rt_box_size, min_mz, max_mz, mz_box_size):
+        super().__init__(min_rt, max_rt, rt_box_size, min_mz, max_mz, mz_box_size)
+        self.all_splits = []
+
     @staticmethod
     def init_boxes(rtboxes, mzboxes):
         arr = np.empty((max(rtboxes), max(mzboxes)), dtype=object)
@@ -172,20 +198,49 @@ class LocatorGrid(Grid):
         new_boxes = [box.copy()]
         for b in other_boxes: #filter boxes down via grid with large boxes for this loop + boxes could be potentially sorted by size (O(n) insert time in worst-case)?
             if(box.overlaps_with_box(b)): #quickly exits any box not overlapping new box
+                updated_boxes = []
                 for b2 in new_boxes:
-                    if(b.contains_box(b2)): #your box is contained within a previous box, in which case area is 0 (remove box from list, return if list is empty)
-                        new_boxes.remove(b2)
-                        if(not new_boxes): return 0.0
-                    else:
-                        split_boxes = b2.split_box(b)
-                        if(not split_boxes is None):
-                            new_boxes.remove(b2)
-                            new_boxes.extend(split_boxes)
+                    if(not b.contains_box(b2)): #if your box is contained within a previous box area is 0 and box is not carried over
+                        split_boxes = b2.non_overlap_split(b)
+                        if(not split_boxes is None): updated_boxes.extend(split_boxes)
+                        else: updated_boxes.append(b2)
+                if(not updated_boxes): return 0.0
+                new_boxes = updated_boxes
         return sum(b.area() for b in new_boxes) / box.area()
         
     def non_overlap(self, box):
         return self.splitting_non_overlap(box, *itertools.chain(*self.get_boxes(box)))
 
+    def split_all_boxes(self, box):
+        new_boxes = [box.copy()]
+        for n, ls in enumerate(self.all_splits): #can we use grid?
+            updated_ls = []
+            for b in ls:
+                if(box.overlaps_with_box(b)):
+                    update_once = True
+                    updated_boxes = []
+                    for b2 in new_boxes:
+                        b_boxes, b2_boxes, both_box = b.split_all(b2)
+                        print(b_boxes, b2_boxes, both_box)
+                        if(b_boxes is None):
+                            if(update_once):
+                                update_once = False
+                                updated_ls.append(b)
+                        else: updated_boxes.extend(b_boxes)
+                        if(b2_boxes is None): updated_boxes.append(b2)
+                        else: updated_boxes.extend(b2_boxes)
+                        if(not both_box is None): updated_boxes.append(both_box)
+                    new_boxes = updated_boxes
+                else: updated_ls.append(b)
+            self.all_splits[n] = updated_ls
+        for b in new_boxes:
+            #print(b.num_overlaps())
+            for _ in range(len(self.all_splits), b.num_overlaps(), 1): self.all_splits.append([])
+            self.all_splits[b.num_overlaps() - 1].append(b)
+        '''print("---")
+        print("All Splits: {}".format(self.all_splits))
+        print("---")'''
+        
     def register_box(self, box):
         rt_box_range, mz_box_range, _ = self.get_box_ranges(box)
         for row in self.boxes[rt_box_range[0]:rt_box_range[1], mz_box_range[0]:mz_box_range[1]]:
@@ -262,7 +317,7 @@ def main():
     
     def run_area_calcs(boxenv, rt_box_size, mz_box_size):
         def pretty_print(scores):
-            print({i : x for i, x in enumerate(itertools.chain(*scores))})
+            print({i : x for i, x in enumerate(itertools.chain(*scores)) if x > 0.0 and x < 1.0})
         print("\nRun area calcs start!")
         print("\nDictGrid Scores:")
         scores_by_injection, dict_time = Timer().time_f(lambda: boxenv.test_non_overlap(DictGrid, rt_box_size, mz_box_size))
@@ -292,8 +347,10 @@ def main():
             _, exact_grid_time = Timer().time_f(lambda: boxenv.test_non_overlap(LocatorGrid, rt_box_size, mz_box_size))
             print("Time with {} Boxes: {}".format(n, exact_grid_time))
     
-    boxenv = TestEnv.random_boxenv(2000, 3)
-    run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 10000, boxenv.max_mz / 10000)
+    boxenv = TestEnv.random_boxenv(10000, 3)
+    run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 20000, boxenv.max_mz / 20000)
+    
+    box_adjust(boxenv, *range(10, 401, 10))
     
     boxenv = TestEnv(0, 50, 50, 2, 3, 2, 3)
     boxenv.boxes_by_injection = [[GenericBox(0, 10, 0, 30), GenericBox(5, 15, 0, 30), GenericBox(0, 10, 15, 45), GenericBox(0, 17, 0, 30)]]
@@ -303,9 +360,6 @@ def main():
     
     box = GenericBox(0, 10, 0, 10)
     other_boxes = [[GenericBox(0+x, 10+x, 0, 10) for x in range(0, 11)], [GenericBox(0, 10, 0+y, 10+y) for y in range(0, 11)], [GenericBox(0+n, 10+n, 0+n, 10+n) for n in range(0, 11)]]
-    for ls in other_boxes:
-        print([box.overlap_2(b) for b in ls])
-        
-    box_adjust(*range(10, 401, 10))
+    for ls in other_boxes: print([box.overlap_2(b) for b in ls])
     
-main()
+if __name__ == "__main__": main()
