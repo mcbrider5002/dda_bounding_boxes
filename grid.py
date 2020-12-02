@@ -19,7 +19,7 @@ Find overlap of bounding boxes
 #use scoring object?
 #implement general case of box splitting? (and get number of boxes produced/plot boxes?)
 #grid for general case of box splitting?
-#check if the contains box in box splitting can be moved
+#interpolate map for n colours
 #@dataclass?
 #plot boxes?
 #generalised box for n dimensions?
@@ -92,29 +92,29 @@ class GenericBox(Box):
         split_boxes = []
         if(other_box.pt1.x > self.pt1.x):
             x1 = other_box.pt1.x
-            split_boxes.append(GenericBox(self.pt1.x, x1, y1, y2))
+            split_boxes.append(GenericBox(self.pt1.x, x1, y1, y2, parents=self.parents))
         if(other_box.pt2.x < self.pt2.x):
             x2 = other_box.pt2.x
-            split_boxes.append(GenericBox(x2, self.pt2.x, y1, y2))
+            split_boxes.append(GenericBox(x2, self.pt2.x, y1, y2, parents=self.parents))
         if(other_box.pt1.y > self.pt1.y):
             y1 = other_box.pt1.y
-            split_boxes.append(GenericBox(x1, x2, self.pt1.y, y1))
+            split_boxes.append(GenericBox(x1, x2, self.pt1.y, y1, parents=self.parents))
         if(other_box.pt2.y < self.pt2.y):
             y2 = other_box.pt2.y
-            split_boxes.append(GenericBox(x1, x2, y2, self.pt2.y))
+            split_boxes.append(GenericBox(x1, x2, y2, self.pt2.y, parents=self.parents))
         return split_boxes
         
     def split_all(self, other_box):
-        #print("\nSplitting on: {}, {}".format(self, other_box))
+        print("\nSplitting on: {}, {}".format(self, other_box))
         if(not self.overlaps_with_box(other_box)): return None, None, None
         both_parents = self.top_level_boxes() + other_box.top_level_boxes()
         #print("Both parents: {}".format(both_parents))
-        both_box = GenericBox(max(self.pt1.x, other_box.pt1.x), min(self.pt2.x, other_box.pt2.x), max(self.pt1.y, other_box.pt1.y), min(self.pt2.y, other_box.pt2.y), parents=both_parents) 
-        b1_boxes = [] if other_box.contains_box(self) else self.non_overlap_split(other_box)
-        b2_boxes = [] if self.contains_box(other_box) else other_box.non_overlap_split(self)
-        '''print("b1_boxes: {}".format(self if b1_boxes is None else b1_boxes))
+        both_box = type(self)(max(self.pt1.x, other_box.pt1.x), min(self.pt2.x, other_box.pt2.x), max(self.pt1.y, other_box.pt1.y), min(self.pt2.y, other_box.pt2.y), parents=both_parents) 
+        b1_boxes = self.non_overlap_split(other_box)
+        b2_boxes = other_box.non_overlap_split(self)
+        print("b1_boxes: {}".format(self if b1_boxes is None else b1_boxes))
         print("b2_boxes: {}".format(other_box if b2_boxes is None else b2_boxes))
-        print("both_box: {}\n".format(both_box))'''
+        print("both_box: {}\n".format(both_box))
         return b1_boxes, b2_boxes, both_box
 
 class Grid():
@@ -174,7 +174,7 @@ class ArrayGrid(Grid):
 class LocatorGrid(Grid):
     def __init__(self, min_rt, max_rt, rt_box_size, min_mz, max_mz, mz_box_size):
         super().__init__(min_rt, max_rt, rt_box_size, min_mz, max_mz, mz_box_size)
-        self.all_splits = []
+        self.all_splits = [[]]
 
     @staticmethod
     def init_boxes(rtboxes, mzboxes):
@@ -195,7 +195,7 @@ class LocatorGrid(Grid):
         
     @staticmethod
     def splitting_non_overlap(box, *other_boxes):
-        new_boxes = [box.copy()]
+        new_boxes = [box]
         for b in other_boxes: #filter boxes down via grid with large boxes for this loop + boxes could be potentially sorted by size (O(n) insert time in worst-case)?
             if(box.overlaps_with_box(b)): #quickly exits any box not overlapping new box
                 updated_boxes = []
@@ -212,31 +212,43 @@ class LocatorGrid(Grid):
         return self.splitting_non_overlap(box, *itertools.chain(*self.get_boxes(box)))
 
     def split_all_boxes(self, box):
-        new_boxes = [box.copy()]
+        b2s, overlaps = [box], []
         for n, ls in enumerate(self.all_splits): #can we use grid?
             updated_ls = []
-            for b in ls:
-                if(box.overlaps_with_box(b)):
-                    update_once = True
-                    updated_boxes = []
-                    for b2 in new_boxes:
-                        b_boxes, b2_boxes, both_box = b.split_all(b2)
-                        print(b_boxes, b2_boxes, both_box)
-                        if(b_boxes is None):
-                            if(update_once):
-                                update_once = False
-                                updated_ls.append(b)
-                        else: updated_boxes.extend(b_boxes)
-                        if(b2_boxes is None): updated_boxes.append(b2)
-                        else: updated_boxes.extend(b2_boxes)
-                        if(not both_box is None): updated_boxes.append(both_box)
-                    new_boxes = updated_boxes
-                else: updated_ls.append(b)
+            for big_b in ls:
+                if(box.overlaps_with_box(big_b)):
+                    bs, updated_b2s = [big_b], []
+                    print("b2s: {}".format(b2s))
+                    for i, b2 in enumerate(b2s):
+                        if(bs == []):
+                            updated_b2s.extend(b2s[i:])
+                            break
+                        print("\n---\nNow processing b2: {}\n---\n".format(b2))
+                        updated_bs = []
+                        for b in bs:
+                            b_boxes, b2_boxes, both_box = b.split_all(b2)
+                            print("b1, b2, both: {} {} {}".format(b_boxes, b2_boxes, both_box))
+                            if(not both_box is None): overlaps.append(both_box)
+                            if(b_boxes is None): updated_bs.append(b)
+                            else: updated_bs.extend(b_boxes)
+                            if(b2_boxes is None): updated_b2s.append(b2)
+                            else: updated_b2s.extend(b2_boxes)
+                            print("Overlaps: {}".format(overlaps))
+                            print("b, b2 Parents: {} {}".format(b.parents, b2.parents))
+                        bs = updated_bs
+                    updated_ls.extend(bs)
+                    b2s = updated_b2s
+                else: updated_ls.append(big_b)
             self.all_splits[n] = updated_ls
-        for b in new_boxes:
+        self.all_splits[0].extend(b2s)
+        for b in overlaps:
             #print(b.num_overlaps())
             for _ in range(len(self.all_splits), b.num_overlaps(), 1): self.all_splits.append([])
             self.all_splits[b.num_overlaps() - 1].append(b)
+        print("All boxes: {}".format(self.all_splits))
+        print("Num overlaps: {}".format([b.num_overlaps() for b in overlaps]))
+        print("Actual num overlaps {}".format([len(ls) for ls in self.all_splits]))
+        print()
         '''print("---")
         print("All Splits: {}".format(self.all_splits))
         print("---")'''

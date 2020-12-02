@@ -1,5 +1,6 @@
 import itertools
 from abc import ABC, abstractmethod
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
@@ -21,10 +22,10 @@ def generate_boxes(n, max_xwidth, max_ywidth):
     def make_box(i):
         steps = (i + 1) // 2
         sign = 1 if i % 2 == 0 else -1
-        x1 = round(mid_x1 - (i * x_step) * sign)
-        x2 = round(mid_x2 + (i * x_step) * sign)
-        y1 = round(mid_y1 + (i * y_step) * sign)
-        y2 = round(mid_y2 - (i * y_step) * sign)
+        x1 = round(mid_x1 - (i / 2 * x_step) * sign)
+        x2 = round(mid_x2 + (i / 2 * x_step) * sign)
+        y1 = round(mid_y1 + (i / 2 * y_step) * sign)
+        y2 = round(mid_y2 - (i / 2 * y_step) * sign)
         return GenericBox(x1, x2, y1, y2)
     return [make_box(i) for i in range(n)]
 
@@ -58,23 +59,38 @@ class FixedMap(ColourMap):
     
 class InterpolationMap(ColourMap):
     '''Assigns colours by interpolating between two colours across the range of number of overlaps.'''
-    def __init__(self, c1, c2):
+    def __init__(self, c1, c2, max_overlap):
         self.c1, self.c2 = c1, c2
+        self.max_overlap = max_overlap
         
-    def get_colour(self, n, max_overlap):
-        def interpolate(fst, snd):
-            smaller, bigger = min(fst, snd), max(fst, snd)
-            return smaller + (bigger - smaller) * (float(n) / max_overlap)
+    def get_colour(self, n):
+        def interpolate(fst, snd): return fst + (snd - fst) * (float(n) / self.max_overlap)
         return tuple(interpolate(fst, snd) for fst, snd in zip(self.c1, self.c2))
+        
+class TripleInterpolationMap(ColourMap):
+    def __init__(self, c1, c2, c3, max_overlap):
+        self.c1, self.c2, self.c3 = c1, c2, c3
+        self.max_overlap = max_overlap
+        
+    def get_colour(self, n):
+        def interpolate(fst, snd, trd): 
+            if(n > self.max_overlap // 2): return snd + (trd - snd) * (0.5 * float(n) / (self.max_overlap % (self.max_overlap // 2) + 1)) 
+            else: return fst + (snd - fst) * (float(n) / (self.max_overlap % (self.max_overlap // 2) + 1))
+        return tuple(interpolate(fst, snd, trd) for fst, snd, trd in zip(self.c1, self.c2, self.c3))
 
 def main():
-    '''boxes = [generate_boxes(i, 90, 90) for i in range(1, 6)]
+    matplotlib.use('TKAgg') #qt is broken on one of my systems - this is workaround
+
+    boxes = [generate_boxes(i, 80, 80) for i in range(1, 8)]
     shifts = ((xshift, yshift) for yshift in range(200, -1, -100) for xshift in range(0, 301, 100))
     for ls, (xshift, yshift) in zip(boxes, shifts): 
         for b in ls: b.shift(xshift=xshift, yshift=yshift)
-    colours = FixedMap([ColourMap.RED, ColourMap.ORANGE, ColourMap.YELLOW, ColourMap.GREEN, ColourMap.LIGHT_BLUE, ColourMap.INDIGO, ColourMap.VIOLET])
-    #colours = InterpolationMap(ColourMap.PURE_RED, ColourMap.PURE_GREEN)
+    #colours = FixedMap([ColourMap.RED, ColourMap.ORANGE, ColourMap.YELLOW, ColourMap.GREEN, ColourMap.LIGHT_BLUE, ColourMap.INDIGO, ColourMap.VIOLET])
+    #colours = InterpolationMap(ColourMap.PURE_BLUE, ColourMap.PURE_RED, 7)
+    colours = TripleInterpolationMap(ColourMap.PURE_BLUE, ColourMap.PURE_GREEN, ColourMap.PURE_RED, 7)
     print(boxes)
+    
+    print()
     
     lgrid = LocatorGrid(0, 1440, 100, 0, 1500, 100)
     for ls in boxes:
@@ -94,7 +110,11 @@ def main():
         for b in ls: ax.add_patch(patches.Rectangle((b.pt1.x, b.pt1.y), b.pt2.x - b.pt1.x, b.pt2.y - b.pt1.y, linewidth=1, ec="black", fc=colours.get_colour(n)))
     ax.set_xlim([0, max(b.pt2.x for b in itertools.chain(*lgrid.all_splits))])
     ax.set_ylim([0, max(b.pt2.y for b in itertools.chain(*lgrid.all_splits))])
-    plt.show()'''
+    plt.show()
+    
+    print([colours.get_colour(i) for i in range(1, 8)])
+    
+    '''print()
     
     boxes = [GenericBox(0, 10, 0, 30), GenericBox(5, 15, 0, 30), GenericBox(0, 10, 15, 45), GenericBox(0, 17, 0, 30)]
     lgrid = LocatorGrid(0, 1440, 100, 0, 1500, 100)
@@ -115,6 +135,6 @@ def main():
         for b in ls: ax.add_patch(patches.Rectangle((b.pt1.x, b.pt1.y), b.pt2.x - b.pt1.x, b.pt2.y - b.pt1.y, linewidth=1, ec="black", fc=colours.get_colour(n)))
     ax.set_xlim([0, max(b.pt2.x for b in itertools.chain(*lgrid.all_splits))])
     ax.set_ylim([0, max(b.pt2.y for b in itertools.chain(*lgrid.all_splits))])
-    plt.show()
+    plt.show()'''
     
 if __name__ == "__main__": main()
