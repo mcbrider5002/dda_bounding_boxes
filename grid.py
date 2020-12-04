@@ -17,8 +17,10 @@ Find overlap of bounding boxes
 #TODO:
 #locatorgrid returns multiples of the same box?
 #use scoring object?
-#implement general case of box splitting? (and get number of boxes produced/plot boxes?)
+#rewrite split box to not do non-overlap twice over
+#get number of boxes produced/plot boxes?
 #grid for general case of box splitting?
+#will using ls.clear() for box splitting retain capacity and thus reduce memory allocations?
 #interpolate map for n colours
 #@dataclass?
 #plot boxes?
@@ -105,16 +107,11 @@ class GenericBox(Box):
         return split_boxes
         
     def split_all(self, other_box):
-        print("\nSplitting on: {}, {}".format(self, other_box))
         if(not self.overlaps_with_box(other_box)): return None, None, None
         both_parents = self.top_level_boxes() + other_box.top_level_boxes()
-        #print("Both parents: {}".format(both_parents))
         both_box = type(self)(max(self.pt1.x, other_box.pt1.x), min(self.pt2.x, other_box.pt2.x), max(self.pt1.y, other_box.pt1.y), min(self.pt2.y, other_box.pt2.y), parents=both_parents) 
         b1_boxes = self.non_overlap_split(other_box)
         b2_boxes = other_box.non_overlap_split(self)
-        print("b1_boxes: {}".format(self if b1_boxes is None else b1_boxes))
-        print("b2_boxes: {}".format(other_box if b2_boxes is None else b2_boxes))
-        print("both_box: {}\n".format(both_box))
         return b1_boxes, b2_boxes, both_box
 
 class Grid():
@@ -218,23 +215,18 @@ class LocatorGrid(Grid):
             for big_b in ls:
                 if(box.overlaps_with_box(big_b)):
                     bs, updated_b2s = [big_b], []
-                    print("b2s: {}".format(b2s))
                     for i, b2 in enumerate(b2s):
                         if(bs == []):
                             updated_b2s.extend(b2s[i:])
                             break
-                        print("\n---\nNow processing b2: {}\n---\n".format(b2))
                         updated_bs = []
                         for b in bs:
                             b_boxes, b2_boxes, both_box = b.split_all(b2)
-                            print("b1, b2, both: {} {} {}".format(b_boxes, b2_boxes, both_box))
                             if(not both_box is None): overlaps.append(both_box)
                             if(b_boxes is None): updated_bs.append(b)
                             else: updated_bs.extend(b_boxes)
                             if(b2_boxes is None): updated_b2s.append(b2)
                             else: updated_b2s.extend(b2_boxes)
-                            print("Overlaps: {}".format(overlaps))
-                            print("b, b2 Parents: {} {}".format(b.parents, b2.parents))
                         bs = updated_bs
                     updated_ls.extend(bs)
                     b2s = updated_b2s
@@ -242,16 +234,8 @@ class LocatorGrid(Grid):
             self.all_splits[n] = updated_ls
         self.all_splits[0].extend(b2s)
         for b in overlaps:
-            #print(b.num_overlaps())
             for _ in range(len(self.all_splits), b.num_overlaps(), 1): self.all_splits.append([])
             self.all_splits[b.num_overlaps() - 1].append(b)
-        print("All boxes: {}".format(self.all_splits))
-        print("Num overlaps: {}".format([b.num_overlaps() for b in overlaps]))
-        print("Actual num overlaps {}".format([len(ls) for ls in self.all_splits]))
-        print()
-        '''print("---")
-        print("All Splits: {}".format(self.all_splits))
-        print("---")'''
         
     def register_box(self, box):
         rt_box_range, mz_box_range, _ = self.get_box_ranges(box)

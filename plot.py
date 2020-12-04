@@ -74,8 +74,8 @@ class TripleInterpolationMap(ColourMap):
         
     def get_colour(self, n):
         def interpolate(fst, snd, trd): 
-            if(n > self.max_overlap // 2): return snd + (trd - snd) * (0.5 * float(n) / (self.max_overlap % (self.max_overlap // 2) + 1)) 
-            else: return fst + (snd - fst) * (float(n) / (self.max_overlap % (self.max_overlap // 2) + 1))
+            if(n > self.max_overlap // 2): return snd + (trd - snd) * (2.0 * (n - (n / 2.0))  / self.max_overlap) 
+            else: return fst + (snd - fst) * (2.0 * n / self.max_overlap)
         return tuple(interpolate(fst, snd, trd) for fst, snd, trd in zip(self.c1, self.c2, self.c3))
 
 def main():
@@ -112,9 +112,7 @@ def main():
     ax.set_ylim([0, max(b.pt2.y for b in itertools.chain(*lgrid.all_splits))])
     plt.show()
     
-    print([colours.get_colour(i) for i in range(1, 8)])
-    
-    '''print()
+    print()
     
     boxes = [GenericBox(0, 10, 0, 30), GenericBox(5, 15, 0, 30), GenericBox(0, 10, 15, 45), GenericBox(0, 17, 0, 30)]
     lgrid = LocatorGrid(0, 1440, 100, 0, 1500, 100)
@@ -135,6 +133,8 @@ def main():
         for b in ls: ax.add_patch(patches.Rectangle((b.pt1.x, b.pt1.y), b.pt2.x - b.pt1.x, b.pt2.y - b.pt1.y, linewidth=1, ec="black", fc=colours.get_colour(n)))
     ax.set_xlim([0, max(b.pt2.x for b in itertools.chain(*lgrid.all_splits))])
     ax.set_ylim([0, max(b.pt2.y for b in itertools.chain(*lgrid.all_splits))])
-    plt.show()'''
+    plt.show()
+    
+    print([colours.get_colour(i) for i in range(1, 8)])
     
 if __name__ == "__main__": main()
