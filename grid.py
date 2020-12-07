@@ -15,12 +15,12 @@ Find overlap of bounding boxes
 '''
 
 #TODO:
+#sanity check where we check as approximation gets better, it approaches exact calculation
 #locatorgrid returns multiples of the same box?
 #use scoring object?
-#rewrite split box to not do non-overlap twice over
-#get number of boxes produced/plot boxes?
+#rewrite split box to not do non-overlap twice over?
 #grid for general case of box splitting?
-#will using ls.clear() for box splitting retain capacity and thus reduce memory allocations?
+#use while with index for box splitting?
 #interpolate map for n colours
 #@dataclass?
 #plot boxes?
@@ -219,14 +219,16 @@ class LocatorGrid(Grid):
                         if(bs == []):
                             updated_b2s.extend(b2s[i:])
                             break
-                        updated_bs = []
+                        updated_bs, push = [], True
                         for b in bs:
                             b_boxes, b2_boxes, both_box = b.split_all(b2)
                             if(not both_box is None): overlaps.append(both_box)
                             if(b_boxes is None): updated_bs.append(b)
                             else: updated_bs.extend(b_boxes)
-                            if(b2_boxes is None): updated_b2s.append(b2)
-                            else: updated_b2s.extend(b2_boxes)
+                            if(not b2_boxes is None): 
+                                push = False
+                                updated_b2s.extend(b2_boxes)
+                        if(push): updated_b2s.append(b2)
                         bs = updated_bs
                     updated_ls.extend(bs)
                     b2s = updated_b2s
@@ -343,7 +345,7 @@ def main():
             _, exact_grid_time = Timer().time_f(lambda: boxenv.test_non_overlap(LocatorGrid, rt_box_size, mz_box_size))
             print("Time with {} Boxes: {}".format(n, exact_grid_time))
     
-    boxenv = TestEnv.random_boxenv(10000, 3)
+    boxenv = TestEnv.random_boxenv(200, 3)
     run_area_calcs(boxenv, (boxenv.max_rt - boxenv.min_rt) / 20000, boxenv.max_mz / 20000)
     
     box_adjust(boxenv, *range(10, 401, 10))
@@ -358,4 +360,10 @@ def main():
     other_boxes = [[GenericBox(0+x, 10+x, 0, 10) for x in range(0, 11)], [GenericBox(0, 10, 0+y, 10+y) for y in range(0, 11)], [GenericBox(0+n, 10+n, 0+n, 10+n) for n in range(0, 11)]]
     for ls in other_boxes: print([box.overlap_2(b) for b in ls])
     
+    boxenv = TestEnv.random_boxenv(10000, 3)
+    lgrid = LocatorGrid(0, 2000, 100, 0, 3000, 100)
+    def split_all():
+        for b in itertools.chain(*boxenv.boxes_by_injection): lgrid.split_all_boxes(b)
+    _, time = Timer().time_f(lambda: split_all())
+    print(time)
 if __name__ == "__main__": main()

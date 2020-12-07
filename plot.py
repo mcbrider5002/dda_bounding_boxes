@@ -80,14 +80,35 @@ class TripleInterpolationMap(ColourMap):
 
 def main():
     matplotlib.use('TKAgg') #qt is broken on one of my systems - this is workaround
+    
+    boxes = [GenericBox(0, 10, 0, 30), GenericBox(5, 15, 0, 30), GenericBox(0, 10, 15, 45), GenericBox(0, 17, 0, 30)]
+    lgrid = LocatorGrid(0, 1440, 100, 0, 1500, 100)
+    for b in boxes: lgrid.split_all_boxes(b)
+    print(lgrid.all_splits)
+    
+    colours = FixedMap([ColourMap.RED, ColourMap.ORANGE, ColourMap.YELLOW, ColourMap.GREEN, ColourMap.LIGHT_BLUE, ColourMap.INDIGO, ColourMap.VIOLET])
+    
+    fig,ax = plt.subplots(1)
+    for n, b in enumerate(list(reversed(boxes))):
+        ax.add_patch(patches.Rectangle((b.pt1.x, b.pt1.y), b.pt2.x - b.pt1.x, b.pt2.y - b.pt1.y, linewidth=1, ec="black", fc=colours.get_colour(n))) 
+    ax.set_xlim([0, max(b.pt2.x for b in boxes)])
+    ax.set_ylim([0, max(b.pt2.y for b in boxes)])
+    plt.show()
+    
+    fig,ax = plt.subplots(1)
+    for n, ls in enumerate(lgrid.all_splits):
+        for b in ls: ax.add_patch(patches.Rectangle((b.pt1.x, b.pt1.y), b.pt2.x - b.pt1.x, b.pt2.y - b.pt1.y, linewidth=1, ec="black", fc=colours.get_colour(n)))
+    ax.set_xlim([0, max(b.pt2.x for b in itertools.chain(*lgrid.all_splits))])
+    ax.set_ylim([0, max(b.pt2.y for b in itertools.chain(*lgrid.all_splits))])
+    plt.show()
 
-    boxes = [generate_boxes(i, 80, 80) for i in range(1, 8)]
+    boxes = [generate_boxes(i, 80, 80) for i in range(1, 11)]
     shifts = ((xshift, yshift) for yshift in range(200, -1, -100) for xshift in range(0, 301, 100))
     for ls, (xshift, yshift) in zip(boxes, shifts): 
         for b in ls: b.shift(xshift=xshift, yshift=yshift)
     #colours = FixedMap([ColourMap.RED, ColourMap.ORANGE, ColourMap.YELLOW, ColourMap.GREEN, ColourMap.LIGHT_BLUE, ColourMap.INDIGO, ColourMap.VIOLET])
     #colours = InterpolationMap(ColourMap.PURE_BLUE, ColourMap.PURE_RED, 7)
-    colours = TripleInterpolationMap(ColourMap.PURE_BLUE, ColourMap.PURE_GREEN, ColourMap.PURE_RED, 7)
+    colours = TripleInterpolationMap(ColourMap.PURE_BLUE, ColourMap.PURE_GREEN, ColourMap.PURE_RED, 10)
     print(boxes)
     
     print()
@@ -114,27 +135,18 @@ def main():
     
     print()
     
-    boxes = [GenericBox(0, 10, 0, 30), GenericBox(5, 15, 0, 30), GenericBox(0, 10, 15, 45), GenericBox(0, 17, 0, 30)]
-    lgrid = LocatorGrid(0, 1440, 100, 0, 1500, 100)
-    for b in boxes: lgrid.split_all_boxes(b)
-    print(lgrid.all_splits)
+    print([colours.get_colour(i) for i in range(1, 11)])
+    def num_boxes(boxes):
+        for ls in boxes:
+            lgrid = LocatorGrid(0, 1440, 100, 0, 1500, 100)
+            for b in ls: lgrid.split_all_boxes(b)
+            yield (len(ls), len(list(itertools.chain(*lgrid.all_splits))))
+    print(", ".join("({} -> {})".format(x, y) for x, y in num_boxes(boxes)))
     
-    colours = FixedMap([ColourMap.RED, ColourMap.ORANGE, ColourMap.YELLOW, ColourMap.GREEN, ColourMap.LIGHT_BLUE, ColourMap.INDIGO, ColourMap.VIOLET])
-    
-    fig,ax = plt.subplots(1)
-    for n, b in enumerate(list(reversed(boxes))):
-        ax.add_patch(patches.Rectangle((b.pt1.x, b.pt1.y), b.pt2.x - b.pt1.x, b.pt2.y - b.pt1.y, linewidth=1, ec="black", fc=colours.get_colour(n))) 
-    ax.set_xlim([0, max(b.pt2.x for b in boxes)])
-    ax.set_ylim([0, max(b.pt2.y for b in boxes)])
-    plt.show()
-    
-    fig,ax = plt.subplots(1)
-    for n, ls in enumerate(lgrid.all_splits):
-        for b in ls: ax.add_patch(patches.Rectangle((b.pt1.x, b.pt1.y), b.pt2.x - b.pt1.x, b.pt2.y - b.pt1.y, linewidth=1, ec="black", fc=colours.get_colour(n)))
-    ax.set_xlim([0, max(b.pt2.x for b in itertools.chain(*lgrid.all_splits))])
-    ax.set_ylim([0, max(b.pt2.y for b in itertools.chain(*lgrid.all_splits))])
-    plt.show()
-    
-    print([colours.get_colour(i) for i in range(1, 8)])
+    #lgrid = LocatorGrid(0, 1440, 100, 0, 1500, 100)
+    #for b in boxes[2]: lgrid.split_all_boxes(b)
+    #print(lgrid.all_splits)
+    #print("\n".join("No. boxes with {} overlaps: {}".format(i+1, len(ls)) for i, ls in enumerate(lgrid.all_splits)))
+    #print(["Overlapping boxes: {} {}".format(b, b2) for i, b in enumerate(lgrid.all_splits[0]) for b2 in lgrid.all_splits[0][i+1:] if b.overlaps_with_box(b2)])
     
 if __name__ == "__main__": main()
