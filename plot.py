@@ -143,10 +143,4 @@ def main():
             yield (len(ls), len(list(itertools.chain(*lgrid.all_splits))))
     print(", ".join("({} -> {})".format(x, y) for x, y in num_boxes(boxes)))
     
-    #lgrid = LocatorGrid(0, 1440, 100, 0, 1500, 100)
-    #for b in boxes[2]: lgrid.split_all_boxes(b)
-    #print(lgrid.all_splits)
-    #print("\n".join("No. boxes with {} overlaps: {}".format(i+1, len(ls)) for i, ls in enumerate(lgrid.all_splits)))
-    #print(["Overlapping boxes: {} {}".format(b, b2) for i, b in enumerate(lgrid.all_splits[0]) for b2 in lgrid.all_splits[0][i+1:] if b.overlaps_with_box(b2)])
-    
 if __name__ == "__main__": main()
