@@ -16,7 +16,9 @@ Find overlap of bounding boxes
 
 #TODO:
 #sanity check where we check as approximation gets better, it approaches exact calculation
+#plot some random boxes as sanity check?
 #locatorgrid returns multiples of the same box?
+#try intervaltrees
 #use scoring object?
 #rewrite split box to not do non-overlap twice over?
 #grid for general case of box splitting?
@@ -55,7 +57,7 @@ class Box():
     def __eq__(self, other_box): return self.pt1 == other_box.pt1 and self.pt2 == other_box.pt2
     def __hash__(self): return (self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y).__hash__()
     def area(self): return (self.pt2.x - self.pt1.x) * (self.pt2.y - self.pt1.y)
-    def copy(self): return type(self)(self.pt1.x, self.pt2.x, self.pt1.y, self.pt2.y)
+    def copy(self, xshift=0, yshift=0): return type(self)(self.pt1.x + xshift, self.pt2.x + xshift, self.pt1.y + yshift, self.pt2.y + yshift)
     def shift(self, xshift=0, yshift=0):
         self.pt1.x += xshift
         self.pt2.x += xshift
@@ -131,8 +133,8 @@ class Grid():
         self.boxes = self.init_boxes(rtboxes, mzboxes)
         
     def get_box_ranges(self, box):
-        rt_box_range = (int(box.pt1.x / self.rt_box_size), int(box.pt2.x / self.rt_box_size) + 1)
-        mz_box_range = (int(box.pt1.y / self.mz_box_size), int(box.pt2.y / self.mz_box_size) + 1)
+        rt_box_range = (int((box.pt1.x - self.min_rt) / self.rt_box_size), int((box.pt2.x - self.min_rt) / self.rt_box_size) + 1)
+        mz_box_range = (int((box.pt1.y - self.min_mz) / self.mz_box_size), int((box.pt2.y - self.min_mz) / self.mz_box_size) + 1)
         total_boxes = (rt_box_range[1] - rt_box_range[0]) * (mz_box_range[1] - mz_box_range[0])
         return rt_box_range, mz_box_range, total_boxes
 
