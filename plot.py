@@ -4,7 +4,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-from grid import GenericBox, LocatorGrid
+from grid import GenericBox, LocatorGrid, AllOverlapGrid
 
 def generate_boxes(n, max_xwidth, max_ywidth):
     inner_x1 = 0.75 * max_xwidth / 2.0
@@ -81,10 +81,14 @@ class TripleInterpolationMap(ColourMap):
 def main():
     matplotlib.use('TKAgg') #qt is broken on one of my systems - this is workaround
     
+    def split_all(grid, boxes):
+        for b in boxes: grid.register_box(b)
+        return grid.boxes_by_overlaps()
+    
     boxes = [GenericBox(0, 10, 0, 30), GenericBox(5, 15, 0, 30), GenericBox(0, 10, 15, 45), GenericBox(0, 17, 0, 30)]
-    lgrid = LocatorGrid(0, 1440, 100, 0, 1500, 100)
-    for b in boxes: lgrid.split_all_boxes(b)
-    print(lgrid.all_splits)
+    grid = AllOverlapGrid(0, 1440, 100, 0, 1500, 100)
+    all_splits = split_all(grid, boxes)
+    print(all_splits)
     
     colours = FixedMap([ColourMap.RED, ColourMap.ORANGE, ColourMap.YELLOW, ColourMap.GREEN, ColourMap.LIGHT_BLUE, ColourMap.INDIGO, ColourMap.VIOLET])
     
@@ -96,27 +100,27 @@ def main():
     plt.show()
     
     fig,ax = plt.subplots(1)
-    for n, ls in enumerate(lgrid.all_splits):
+    for n, ls in enumerate(all_splits):
         for b in ls: ax.add_patch(patches.Rectangle((b.pt1.x, b.pt1.y), b.pt2.x - b.pt1.x, b.pt2.y - b.pt1.y, linewidth=1, ec="black", fc=colours.get_colour(n)))
-    ax.set_xlim([0, max(b.pt2.x for b in itertools.chain(*lgrid.all_splits))])
-    ax.set_ylim([0, max(b.pt2.y for b in itertools.chain(*lgrid.all_splits))])
+    ax.set_xlim([0, max(b.pt2.x for b in itertools.chain(*all_splits))])
+    ax.set_ylim([0, max(b.pt2.y for b in itertools.chain(*all_splits))])
     plt.show()
 
     boxes = [generate_boxes(i, 80, 80) for i in range(1, 11)]
     shifts = ((xshift, yshift) for yshift in range(200, -1, -100) for xshift in range(0, 301, 100))
     for ls, (xshift, yshift) in zip(boxes, shifts): 
         for b in ls: b.shift(xshift=xshift, yshift=yshift)
-    #colours = FixedMap([ColourMap.RED, ColourMap.ORANGE, ColourMap.YELLOW, ColourMap.GREEN, ColourMap.LIGHT_BLUE, ColourMap.INDIGO, ColourMap.VIOLET])
-    #colours = InterpolationMap(ColourMap.PURE_BLUE, ColourMap.PURE_RED, 7)
-    colours = TripleInterpolationMap(ColourMap.PURE_BLUE, ColourMap.PURE_GREEN, ColourMap.PURE_RED, 10)
     print(boxes)
     
     print()
     
-    lgrid = LocatorGrid(0, 1440, 100, 0, 1500, 100)
-    for ls in boxes:
-        for b in ls: lgrid.split_all_boxes(b)
-    print(lgrid.all_splits)
+    grid = AllOverlapGrid(0, 1440, 100, 0, 1500, 100)
+    all_splits = split_all(grid, itertools.chain(*boxes))
+    print(all_splits)
+
+    #colours = FixedMap([ColourMap.RED, ColourMap.ORANGE, ColourMap.YELLOW, ColourMap.GREEN, ColourMap.LIGHT_BLUE, ColourMap.INDIGO, ColourMap.VIOLET])
+    colours = InterpolationMap(ColourMap.PURE_BLUE, ColourMap.PURE_RED, 10)
+    #colours = TripleInterpolationMap(ColourMap.PURE_BLUE, ColourMap.PURE_GREEN, ColourMap.PURE_RED, 10)
 
     fig,ax = plt.subplots(1)
     for ls in boxes:
@@ -127,20 +131,31 @@ def main():
     plt.show()
     
     fig,ax = plt.subplots(1)
-    for n, ls in enumerate(lgrid.all_splits):
+    for n, ls in enumerate(all_splits):
         for b in ls: ax.add_patch(patches.Rectangle((b.pt1.x, b.pt1.y), b.pt2.x - b.pt1.x, b.pt2.y - b.pt1.y, linewidth=1, ec="black", fc=colours.get_colour(n)))
-    ax.set_xlim([0, max(b.pt2.x for b in itertools.chain(*lgrid.all_splits))])
-    ax.set_ylim([0, max(b.pt2.y for b in itertools.chain(*lgrid.all_splits))])
+    ax.set_xlim([0, max(b.pt2.x for b in itertools.chain(*all_splits))])
+    ax.set_ylim([0, max(b.pt2.y for b in itertools.chain(*all_splits))])
     plt.show()
     
     print()
     
     print([colours.get_colour(i) for i in range(1, 11)])
+    
     def num_boxes(boxes):
         for ls in boxes:
-            lgrid = LocatorGrid(0, 1440, 100, 0, 1500, 100)
-            for b in ls: lgrid.split_all_boxes(b)
-            yield (len(ls), len(list(itertools.chain(*lgrid.all_splits))))
+            grid = AllOverlapGrid(0, 1440, 100, 0, 1500, 100)
+            yield (len(ls), len(list(itertools.chain(*split_all(grid, ls)))))
+            
+    def true_box_counts():
+        i, n = 0, 0
+        while(True):
+            if(i < 1): n = 1
+            else: n += (2 * i + 1) + (2 * (i-1) + 1)
+            i += 1
+            yield n
+            
     print(", ".join("({} -> {})".format(x, y) for x, y in num_boxes(boxes)))
+    print(", ".join("({} -> {})".format(x, y) for x, y in zip(range(1, 11), true_box_counts())))
+    assert all(x == y for (_, x), y in zip(num_boxes(boxes), true_box_counts())), "True box counts didn't match observed box counts for test example!"
     
 if __name__ == "__main__": main()
