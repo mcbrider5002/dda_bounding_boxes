@@ -218,7 +218,6 @@ class LocatorGrid(Grid):
             for s in row: s.add(box)
             
 class AllOverlapGrid(LocatorGrid):
-
     @staticmethod
     def split_all_boxes(box, other_boxes):
         this_non, other_non, overlaps = [box], [], []
@@ -251,8 +250,8 @@ class AllOverlapGrid(LocatorGrid):
         box.intensity = 0.0
         other_boxes = self.get_boxes(box)
         this_non, _, overlaps = self.split_all_boxes(box, other_boxes)
-        non_overlap = (sum(b.area() for b in this_non) / box.area()) * current_intensity
-        refragment = sum(max(0.0, current_intensity - b.intensity) * (b.area() / box.area()) for b in overlaps)
+        non_overlap = current_intensity ** (sum(b.area() for b in this_non) / box.area())
+        refragment = sum(max(0.0, current_intensity - b.intensity) ** (b.area() / box.area()) for b in overlaps)
         return non_overlap + refragment
             
     def register_box(self, box):
@@ -409,12 +408,13 @@ def main():
     for ls in other_boxes: print([box.overlap_2(b) for b in ls])
     
     boxenv = TestEnv.random_boxenv(10000, 3)
-    lgrid = AllOverlapGrid(0, 2000, 100, 0, 3000, 100)
-    _, time = Timer().time_f(lambda: lgrid.boxes_by_overlaps(boxes=itertools.chain(*boxenv.boxes_by_injection)))
+    grid = AllOverlapGrid(0, 2000, 100, 0, 3000, 100)
+    _, time = Timer().time_f(lambda: grid.boxes_by_overlaps(boxes=itertools.chain(*boxenv.boxes_by_injection)))
     print(f"Time taken for split all no grid: {time}")
     def split_all():
-        for b in itertools.chain(*boxenv.boxes_by_injection): lgrid.register_box(b)
-        return lgrid.boxes_by_overlaps()
+        for b in itertools.chain(*boxenv.boxes_by_injection): grid.register_box(b)
+        return grid.boxes_by_overlaps()
     _, time = Timer().time_f(split_all)
     print(f"Time taken for split all grid: {time}")
+    
 if __name__ == "__main__": main()
