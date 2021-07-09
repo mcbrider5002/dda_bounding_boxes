@@ -30,6 +30,7 @@ from grid import GenericBox, LocatorGrid, AllOverlapGrid
     #other colour spaces, like YUV??
     
 #NOTE: existing colour maps mix structure (i.e. whether we care about top-level boxes) and colour picking, may be best to separate out somewhat?
+#better inheritance i.e. not repeating plotting stuff or passing unnecessary parameters should follow
 
 class RGBColour():
     def __init__(self, R, G, B): self.R, self.G, self.B = R, G, B
@@ -112,20 +113,20 @@ class AutoColourMap(ColourMap):
     def random_colours(boxes):
         return {b : RGBColour(*(random.uniform(0, 255) for _ in range(3))) for b in boxes}
 
-    def assign_colours(self, boxes, top_level):
+    def assign_colours(self, boxes):
         #if there's no path from one box to another when we build a graph of their overlaps, we can re-use colours
-        top_level = OrderedDict.fromkeys(top for b in boxes for top in b.parents) if top_level is None else top_level
+        top_level = OrderedDict.fromkeys(top for b in boxes for top in b.parents)
         top_level_colours = self.colour_picker(top_level.keys())
         def interpolate_lower(box): return top_level_colours[box.parents[0]].interpolate([top_level_colours[b] for b in box.parents[1:]])
         return ((b, interpolate_lower(b)) for b in boxes)
         
-    def add_to_subplot(self, ax, boxes, top_level=None):
-        for box, colour in self.assign_colours(boxes, top_level):
+    def add_to_subplot(self, ax, boxes):
+        for box, colour in self.assign_colours(boxes):
             ax.add_patch(patches.Rectangle((box.pt1.x, box.pt1.y), box.pt2.x - box.pt1.x, box.pt2.y - box.pt1.y, linewidth=1, ec="black", fc=colour.squash()))    
         
-    def get_plot(self, boxes, top_level=None):
+    def get_plot(self, boxes):
         fig, ax = plt.subplots(1)
-        self.add_to_subplot(ax, boxes, top_level=top_level)
+        self.add_to_subplot(ax, boxes)
         ax.set_xlim([0, max(b.pt2.x for b in boxes)])
         ax.set_ylim([0, max(b.pt2.y for b in boxes)])
         return plt
@@ -200,12 +201,13 @@ def main():
     cmap = AutoColourMap(AutoColourMap.random_colours)
     cmap.get_plot(all_splits).show()
     
-    cmap = AutoColourMap(lambda boxes: dict(FixedMap(rainbow).unique_colours(boxes)))
     fig, ax = plt.subplots(1)
+    assignments = {b : c for box_ls in boxes for b, c in FixedMap(rainbow).unique_colours(box_ls)}
     for box_ls in boxes:
         grid = AllOverlapGrid(0, 1440, 100, 0, 1500, 100)
         split_ls = list(itertools.chain(*split_all(grid, box_ls)))
-        cmap.add_to_subplot(ax, split_ls, top_level=OrderedDict.fromkeys(box_ls))
+        cmap = AutoColourMap(lambda boxes: assignments)
+        cmap.add_to_subplot(ax, split_ls)
     ax.set_xlim([0, max(b.pt2.x for b in all_splits)])
     ax.set_ylim([0, max(b.pt2.y for b in all_splits)])
     plt.show()
