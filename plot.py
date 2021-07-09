@@ -1,4 +1,7 @@
+import random
+from functools import reduce
 import itertools
+from collections import OrderedDict
 from abc import ABC, abstractmethod
 import matplotlib
 import matplotlib.pyplot as plt
@@ -24,14 +27,21 @@ from grid import GenericBox, LocatorGrid, AllOverlapGrid
     #can randomly seed as well
     #we can also plot these points in 3d space to build intuition
     #can rotate soln. to get different colour combo?
+    #other colour spaces, like YUV??
+    
+#NOTE: existing colour maps mix structure (i.e. whether we care about top-level boxes) and colour picking, may be best to separate out somewhat?
 
 class RGBColour():
     def __init__(self, R, G, B): self.R, self.G, self.B = R, G, B
     def __repr__(self): return f"RGBColour({self.R}, {self.G}, {self.B})"
+    def __add__(self, other): return RGBColour(self.R + other.R, self.G + other.G, self.B + other.B)
+    def __mul__(self, scalar): return RGBColour(self.R * scalar, self.G * scalar, self.B * scalar)
+    def __rmul__(self, scalar): return self.__mul__(self.scalar)
     def squash(self): return (self.R / 255.0, self.G / 255.0, self.B / 255.0)
-    def interpolate(self, other, weight=0.5):
-        def helper(x, y): return x + (y - x) * weight
-        return RGBColour(helper(self.R, other.R), helper(self.G, other.G), helper(self.B, other.B))
+    def interpolate(self, others, weights=None):
+        colours = others + [self]
+        weights = [1 / len(colours) for _ in colours] if weights is None else weights
+        return sum((c * w for c, w in zip(colours, weights)), start=RGBColour(0, 0, 0))
 
 class ColourMap():
 
@@ -72,6 +82,9 @@ class FixedMap(ColourMap):
     def assign_colours(self, boxes, key):
         return ((b, self.mapping[min(key(b), len(self.mapping) - 1)]) for b in boxes)
         
+    def unique_colours(self, boxes):
+        return ((b, self.mapping[min(i, len(self.mapping) - 1)]) for i, b in enumerate(boxes))
+        
 class InterpolationMap(ColourMap):
     '''Assigns colours by interpolating between n colours based on a key value.'''
     def __init__(self, colours):
@@ -85,9 +98,37 @@ class InterpolationMap(ColourMap):
         def get_colour(box):
             i = next(i-1 for i, threshold in enumerate(intervals) if threshold >= key(box))
             weight = (key(box) - intervals[i]) / (intervals[i + 1] - intervals[i])
-            return self.colours[i].interpolate(self.colours[i+1], weight=weight)
+            return self.colours[i].interpolate([self.colours[i+1]], weights=[weight, 1-weight])
         
         return ((b, get_colour(b)) for b in boxes)
+        
+class AutoColourMap(ColourMap):
+
+    def __init__(self, colour_picker, reuse_colours=False):
+        self.colour_picker = colour_picker
+        self.reuse_colours = reuse_colours
+        
+    @staticmethod
+    def random_colours(boxes):
+        return {b : RGBColour(*(random.uniform(0, 255) for _ in range(3))) for b in boxes}
+
+    def assign_colours(self, boxes, top_level):
+        #if there's no path from one box to another when we build a graph of their overlaps, we can re-use colours
+        top_level = OrderedDict.fromkeys(top for b in boxes for top in b.parents) if top_level is None else top_level
+        top_level_colours = self.colour_picker(top_level.keys())
+        def interpolate_lower(box): return top_level_colours[box.parents[0]].interpolate([top_level_colours[b] for b in box.parents[1:]])
+        return ((b, interpolate_lower(b)) for b in boxes)
+        
+    def add_to_subplot(self, ax, boxes, top_level=None):
+        for box, colour in self.assign_colours(boxes, top_level):
+            ax.add_patch(patches.Rectangle((box.pt1.x, box.pt1.y), box.pt2.x - box.pt1.x, box.pt2.y - box.pt1.y, linewidth=1, ec="black", fc=colour.squash()))    
+        
+    def get_plot(self, boxes, top_level=None):
+        fig, ax = plt.subplots(1)
+        self.add_to_subplot(ax, boxes, top_level=top_level)
+        ax.set_xlim([0, max(b.pt2.x for b in boxes)])
+        ax.set_ylim([0, max(b.pt2.y for b in boxes)])
+        return plt
         
 def generate_boxes(n, max_xwidth, max_ywidth):
     inner_x1 = 0.75 * max_xwidth / 2.0
@@ -129,17 +170,24 @@ def main():
     grid = AllOverlapGrid(0, 1440, 100, 0, 1500, 100)
     all_splits = list(itertools.chain(*split_all(grid, boxes)))
     
-    cmap = FixedMap([ColourMap.RED, ColourMap.ORANGE, ColourMap.YELLOW, ColourMap.GREEN, ColourMap.LIGHT_BLUE, ColourMap.INDIGO, ColourMap.VIOLET])
+    rainbow = [ColourMap.RED, ColourMap.ORANGE, ColourMap.YELLOW, ColourMap.GREEN, ColourMap.LIGHT_BLUE, ColourMap.INDIGO, ColourMap.VIOLET]
+    cmap = FixedMap(rainbow)
     cmap.get_plot(list(reversed(boxes)), key=lambda b: {b : i for i, b in enumerate(reversed(boxes))}[b]).show()
-    cmap.get_plot(all_splits, key=lambda b: len(b.top_level_boxes()) - 1).show()
+    cmap.get_plot(all_splits, key=lambda b: len(b.parents) - 1).show()
     
     cmap = InterpolationMap([ColourMap.YELLOW, ColourMap.RED])
     cmap.get_plot(all_splits, key=lambda b: b.intensity).show()
-    cmap.get_plot(all_splits, key=lambda b: len(b.top_level_boxes())).show()
+    cmap.get_plot(all_splits, key=lambda b: len(b.parents)).show()
+    
+    cmap = AutoColourMap(AutoColourMap.random_colours)
+    cmap.get_plot(all_splits).show()
+    
+    cmap = AutoColourMap(lambda boxes: dict(FixedMap(rainbow).unique_colours(boxes)))
+    cmap.get_plot(all_splits).show()
     
     boxes = [generate_boxes(i, 80, 80) for i in range(1, 11)]
     shifts = ((xshift, yshift) for yshift in range(200, -1, -100) for xshift in range(0, 301, 100))
-    for ls, (xshift, yshift) in zip(boxes, shifts): 
+    for ls, (xshift, yshift) in zip(boxes, shifts):
         for b in ls: b.shift(xshift=xshift, yshift=yshift)
     grid = AllOverlapGrid(0, 1440, 100, 0, 1500, 100)
     all_splits = list(itertools.chain(*split_all(grid, itertools.chain(*boxes))))
@@ -147,7 +195,20 @@ def main():
     cmap = InterpolationMap([ColourMap.PURE_BLUE, ColourMap.PURE_RED])
     keydict = {b : i for ls in boxes for i, b in enumerate(ls)}
     cmap.get_plot(list(itertools.chain(*boxes)), key=lambda b: keydict[b]).show()
-    cmap.get_plot(all_splits, key=lambda b: len(b.top_level_boxes())).show()
+    cmap.get_plot(all_splits, key=lambda b: len(b.parents)).show()
+    
+    cmap = AutoColourMap(AutoColourMap.random_colours)
+    cmap.get_plot(all_splits).show()
+    
+    cmap = AutoColourMap(lambda boxes: dict(FixedMap(rainbow).unique_colours(boxes)))
+    fig, ax = plt.subplots(1)
+    for box_ls in boxes:
+        grid = AllOverlapGrid(0, 1440, 100, 0, 1500, 100)
+        split_ls = list(itertools.chain(*split_all(grid, box_ls)))
+        cmap.add_to_subplot(ax, split_ls, top_level=OrderedDict.fromkeys(box_ls))
+    ax.set_xlim([0, max(b.pt2.x for b in all_splits)])
+    ax.set_ylim([0, max(b.pt2.y for b in all_splits)])
+    plt.show()
     
     def num_boxes(boxes):
         for ls in boxes:

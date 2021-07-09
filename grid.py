@@ -42,10 +42,10 @@ class Point():
     def __repr__(self): return "Point({}, {})".format(self.x, self.y)
 
 class Box():
-    def __init__(self, x1, x2, y1, y2, parents=[], min_xwidth=0, min_ywidth=0, intensity=0):
+    def __init__(self, x1, x2, y1, y2, parents=None, min_xwidth=0, min_ywidth=0, intensity=0):
         self.pt1 = Point(min(x1, x2), min(y1, y2))
         self.pt2 = Point(max(x1, x2), max(y1, y2))
-        self.parents = parents
+        self.parents = [self] if parents is None else parents
         self.intensity = intensity
         
         if(self.pt2.x - self.pt1.x < min_xwidth):
@@ -66,8 +66,7 @@ class Box():
         self.pt2.x += xshift
         self.pt1.y += yshift
         self.pt2.y += yshift
-    def num_overlaps(self): return 1 if len(self.parents) == 0 else len(self.parents)
-    def top_level_boxes(self): return [self.copy()] if self.parents == [] else self.parents
+    def num_overlaps(self): return len(self.parents)
         
 class GenericBox(Box):
     '''Makes no particular assumptions about bounding boxes.'''
@@ -113,7 +112,7 @@ class GenericBox(Box):
         
     def split_all(self, other_box):
         if(not self.overlaps_with_box(other_box)): return None, None, None
-        both_parents = self.top_level_boxes() + other_box.top_level_boxes()
+        both_parents = self.parents + other_box.parents
         both_box = type(self)(max(self.pt1.x, other_box.pt1.x), min(self.pt2.x, other_box.pt2.x), max(self.pt1.y, other_box.pt1.y), min(self.pt2.y, other_box.pt2.y), parents=both_parents, intensity=max(self.intensity, other_box.intensity))
         b1_boxes = self.non_overlap_split(other_box)
         b2_boxes = other_box.non_overlap_split(self)
