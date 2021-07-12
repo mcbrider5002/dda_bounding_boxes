@@ -9,15 +9,6 @@ import matplotlib.patches as patches
 
 from grid import GenericBox, LocatorGrid, AllOverlapGrid
 
-#how do we colour?
-#fixed set of colours - only works up to fixed n
-#by intensity
-#by number of parents
-#unique colour assigned to each parent then interpolate for overlaps
-
-#by unique colour for parents
-#collect set of top-level boxes, give one colour to each, then interpolate for anything that has more than one parent
-#if there's no path from one box to another when we build a graph of their overlaps, we can re-use colours
 #how do we choose colours?
     #by distinctiveness - maximise distance of n points on the colour cube
     #don't know how to do this analytically yet...
@@ -31,6 +22,8 @@ from grid import GenericBox, LocatorGrid, AllOverlapGrid
     
 #NOTE: existing colour maps mix structure (i.e. whether we care about top-level boxes) and colour picking, may be best to separate out somewhat?
 #better inheritance i.e. not repeating plotting stuff or passing unnecessary parameters should follow
+
+#want to be able to plot RoI points as well - should change colour-picking abstractions to work with either
 
 class RGBColour():
     def __init__(self, R, G, B): self.R, self.G, self.B = R, G, B
@@ -111,12 +104,29 @@ class AutoColourMap(ColourMap):
         
     @staticmethod
     def random_colours(boxes):
-        return {b : RGBColour(*(random.uniform(0, 255) for _ in range(3))) for b in boxes}
+        return ((b, RGBColour(*(random.uniform(0, 255) for _ in range(3)))) for b in boxes)
 
     def assign_colours(self, boxes):
         #if there's no path from one box to another when we build a graph of their overlaps, we can re-use colours
-        top_level = OrderedDict.fromkeys(top for b in boxes for top in b.parents)
-        top_level_colours = self.colour_picker(top_level.keys())
+        pairs = [(top, set()) for b in boxes for top in b.parents]
+        top_level = OrderedDict(pairs) #need uniqueness and maintain ordering
+        if(self.reuse_colours):
+            for b in boxes:
+                for top in b.parents: top_level[top].add(b) #note same set references in pairs and top_level
+                
+            components, indices = [], [-1 for _ in pairs]
+            for i, (parent, children) in enumerate(top_level.items()):
+                if(indices[i] == -1):
+                    indices[i] = len(components)
+                    components.append(OrderedDict([(parent, None)]))
+                update = [(j, k) for j, (k, v) in enumerate(pairs[i:]) if children & v]
+                for (j, k) in update:
+                    indices[j] = indices[i]
+                    components[indices[i]][k] = None
+        else:
+            components = [top_level]
+                    
+        top_level_colours = {top : colour for cs in components for top, colour in self.colour_picker(cs.keys())}
         def interpolate_lower(box): return top_level_colours[box.parents[0]].interpolate([top_level_colours[b] for b in box.parents[1:]])
         return ((b, interpolate_lower(b)) for b in boxes)
         
@@ -183,7 +193,7 @@ def main():
     cmap = AutoColourMap(AutoColourMap.random_colours)
     cmap.get_plot(all_splits).show()
     
-    cmap = AutoColourMap(lambda boxes: dict(FixedMap(rainbow).unique_colours(boxes)))
+    cmap = AutoColourMap(FixedMap(rainbow).unique_colours)
     cmap.get_plot(all_splits).show()
     
     boxes = [generate_boxes(i, 80, 80) for i in range(1, 11)]
@@ -201,8 +211,14 @@ def main():
     cmap = AutoColourMap(AutoColourMap.random_colours)
     cmap.get_plot(all_splits).show()
     
+    cmap = AutoColourMap(FixedMap(rainbow).unique_colours)
+    cmap.get_plot(all_splits).show()
+    
+    cmap = AutoColourMap(FixedMap(rainbow).unique_colours, reuse_colours=True)
+    cmap.get_plot(all_splits).show()
+    
     fig, ax = plt.subplots(1)
-    assignments = {b : c for box_ls in boxes for b, c in FixedMap(rainbow).unique_colours(box_ls)}
+    assignments = [(b, c) for box_ls in boxes for b, c in FixedMap(rainbow).unique_colours(box_ls)]
     for box_ls in boxes:
         grid = AllOverlapGrid(0, 1440, 100, 0, 1500, 100)
         split_ls = list(itertools.chain(*split_all(grid, box_ls)))
